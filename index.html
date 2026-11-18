@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>揮拍教練 Swing Coach</title>
+<meta name="description" content="Upload a phone video of your tennis swing; pose tracking runs on your device and gives bilingual coaching. 上傳網球揮拍影片，在裝置上分析動作並給予建議。">
+<meta name="theme-color" content="#1f7a4d" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d1512" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="揮拍教練">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="css/app.css">
+<script>
+  // theme before first paint
+  try { const th = localStorage.getItem('sc-theme'); if (th === 'light' || th === 'dark') document.documentElement.dataset.theme = th; } catch (e) {}
+</script>
+</head>
+<body>
+<header class="top">
+  <button class="brand" id="brand" type="button" aria-label="Home">
+    <img src="icons/icon.svg" alt="" width="30" height="30">
+    <span data-i18n="appName">揮拍教練</span>
+  </button>
+  <div class="top-actions">
+    <button class="icon-btn" id="btnHistory" type="button" data-i18n-title="history">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v5l3 2M3.5 12a8.5 8.5 0 1 0 2.5-6M3 4v4h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <button class="icon-btn" id="btnTheme" type="button" data-i18n-title="theme">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+    </button>
+    <button class="lang-btn" id="btnLang" type="button" data-i18n="lang">EN</button>
+  </div>
+</header>
+
+<main id="main">
+  <!-- HOME -->
+  <section id="home" class="view">
+    <div class="hero">
+      <h1 data-i18n="appName">揮拍教練</h1>
+      <p class="tagline" data-i18n="tagline"></p>
+      <p class="privacy"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-i18n="privacy"></span></p>
+    </div>
+    <label class="drop" id="drop">
+      <input type="file" id="fileInput" accept="video/*,.mov,.mp4,.m4v,.webm">
+      <span class="drop-icon" aria-hidden="true"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="var(--ball)"/><path d="M8.5 13.5c6 4 6 17 0 21M39.5 13.5c-6 4-6 17 0 21" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg></span>
+      <span class="drop-main" data-i18n="pick"></span>
+      <span class="drop-sub" data-i18n="pickSub"></span>
+      <span class="drop-hint" data-i18n="dropHint"></span>
+    </label>
+    <div class="cards2">
+      <div class="card tips">
+        <h2 data-i18n="tipsTitle"></h2>
+        <ul>
+          <li><span class="tip-ico">1</span><span data-i18n="tip1"></span></li>
+          <li><span class="tip-ico">2</span><span data-i18n="tip2"></span></li>
+          <li><span class="tip-ico">3</span><span data-i18n="tip3"></span></li>
+          <li><span class="tip-ico">4</span><span data-i18n="tip4"></span></li>
+        </ul>
+      </div>
+      <div class="card steps">
+        <h2 data-i18n="stepsTitle"></h2>
+        <ol>
+          <li data-i18n="step1"></li>
+          <li data-i18n="step2"></li>
+          <li data-i18n="step3"></li>
+        </ol>
+        <svg class="steps-art" viewBox="0 0 220 120" aria-hidden="true">
+          <path d="M20 100 Q110 -10 200 60" fill="none" stroke="var(--primary)" stroke-width="3" stroke-dasharray="6 7" stroke-linecap="round"/>
+          <circle cx="200" cy="60" r="10" fill="var(--ball)"/>
+          <g stroke="var(--text)" stroke-width="4" stroke-linecap="round" fill="none"><circle cx="52" cy="34" r="8" fill="var(--text)"/><path d="M52 44 L48 74 L36 104 M48 74 L62 102 M50 52 L72 62 L92 50 M50 52 L36 66"/></g>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- PREPARE -->
+  <section id="prepare" class="view" hidden>
+    <div class="bar"><button class="ghost" type="button" data-go="home">← <span data-i18n="back"></span></button><h2 data-i18n="prepareTitle"></h2></div>
+    <div class="prep-grid">
+      <div class="video-box"><video id="prepVideo" playsinline muted preload="auto"></video></div>
+      <div class="prep-side">
+        <div class="trim card">
+          <p class="hint" data-i18n="trimHint"></p>
+          <div class="strip" id="strip">
+            <div class="thumbs" id="thumbs"></div>
+            <canvas id="motionCanvas"></canvas>
+            <div class="sel" id="trimSel"></div>
+            <div class="handle" id="hStart" role="slider" tabindex="0" aria-label="start"></div>
+            <div class="handle" id="hEnd" role="slider" tabindex="0" aria-label="end"></div>
+            <div class="scan-msg" id="scanMsg" data-i18n="scanning"></div>
+          </div>
+          <div class="trim-row"><span id="trimLabel">0:00.0 – 0:00.0</span>
+            <span class="trim-btns"><button class="chip" type="button" id="btnSuggest" data-i18n="useSuggested"></button><button class="chip" type="button" id="btnAll" data-i18n="useAll"></button></span></div>
+        </div>
+        <div class="settings card">
+          <div class="set"><span class="set-l" data-i18n="quality"></span>
+            <div class="seg" id="segQuality"><button type="button" data-v="fast" data-i18n="qFast"></button><button type="button" data-v="balanced" data-i18n="qBalanced"></button><button type="button" data-v="precise" data-i18n="qPrecise"></button></div></div>
+          <p class="small muted" data-i18n="qNote"></p>
+          <div class="set"><span class="set-l" data-i18n="hand"></span>
+            <div class="seg" id="segHand"><button type="button" data-v="auto" data-i18n="handAuto"></button><button type="button" data-v="R" data-i18n="handR"></button><button type="button" data-v="L" data-i18n="handL"></button></div></div>
+          <div class="set"><span class="set-l" data-i18n="slowmo"></span>
+            <div class="seg" id="segSlow"><button type="button" data-v="auto" data-i18n="smAuto"></button><button type="button" data-v="1" data-i18n="sm1"></button><button type="button" data-v="4" data-i18n="sm4"></button><button type="button" data-v="8" data-i18n="sm8"></button></div></div>
+          <p class="estimate" id="estimate"></p>
+          <button class="primary big" type="button" id="btnStart" data-i18n="start"></button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PROCESSING -->
+  <section id="processing" class="view" hidden>
+    <div class="proc card">
+      <h2><span data-i18n="processing"></span><span class="dots" aria-hidden="true"></span></h2>
+      <div class="proc-preview"><canvas id="procCanvas"></canvas></div>
+      <div class="progress"><div class="progress-fill" id="progFill"></div></div>
+      <div class="proc-row"><span id="procFrames"></span><span id="procEta"></span></div>
+      <p class="small muted" id="procStatus"></p>
+      <button class="ghost" type="button" id="btnCancel" data-i18n="cancel"></button>
+    </div>
+  </section>
+
+  <!-- RESULTS -->
+  <section id="results" class="view" hidden>
+    <div class="res-grid">
+      <div class="player-col">
+        <div class="player card">
+          <div class="video-wrap" id="videoWrap">
+            <video id="resVideo" playsinline muted preload="auto"></video>
+            <canvas id="overlay"></canvas>
+            <div class="tap-msg" id="tapMsg" hidden data-i18n="pickPlayerHint"></div>
+            <div class="nophoto" id="noVideo" hidden data-i18n="historyView"></div>
+          </div>
+          <div class="ctrl">
+            <button class="icon-btn" id="btnPrev" type="button" data-i18n-title="prevFrame"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button class="icon-btn play" id="btnPlay" type="button" data-i18n-title="play"><svg viewBox="0 0 24 24" id="playIco"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></button>
+            <button class="icon-btn" id="btnNext" type="button" data-i18n-title="nextFrame"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <div class="seg small-seg" id="segRate"><button type="button" data-v="0.25">¼×</button><button type="button" data-v="0.5">½×</button><button type="button" data-v="1">1×</button></div>
+            <button class="chip" id="btnContact" type="button" data-i18n="toContact"></button>
+            <button class="chip toggle on" id="btnSkel" type="button" data-i18n="skeleton"></button>
+          </div>
+          <input type="range" id="scrub" min="0" max="1000" value="0" step="1" aria-label="scrub">
+          <canvas id="timeline" class="timeline"></canvas>
+          <div class="time-row"><span id="timeNow">0:00.0</span><span id="phaseNow"></span></div>
+        </div>
+        <div class="badges" id="badges"></div>
+      </div>
+      <div class="panel-col">
+        <div class="chips-row" id="swingChips"></div>
+        <div class="tabs" role="tablist">
+          <button type="button" role="tab" data-tab="coach" class="on" data-i18n="tabCoach"></button>
+          <button type="button" role="tab" data-tab="metrics" data-i18n="tabMetrics"></button>
+          <button type="button" role="tab" data-tab="charts" data-i18n="tabCharts"></button>
+          <button type="button" role="tab" data-tab="compare" data-i18n="tabCompare"></button>
+        </div>
+        <div class="tab-body" id="tab-coach"></div>
+        <div class="tab-body" id="tab-metrics" hidden></div>
+        <div class="tab-body" id="tab-charts" hidden>
+          <div class="card"><h3 data-i18n="chartSpeed"></h3><canvas id="chartSpeed" class="chart"></canvas></div>
+          <div class="card"><h3 id="anglesTitle" data-i18n="chartAngles"></h3><canvas id="chartAngles" class="chart"></canvas><div class="legend" id="anglesLegend"></div></div>
+        </div>
+        <div class="tab-body" id="tab-compare" hidden></div>
+        <div class="actions">
+          <button class="primary" type="button" id="btnSave" data-i18n="saveImage"></button>
+          <button class="ghost" type="button" id="btnNew" data-i18n="newAnalysis"></button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HISTORY -->
+  <section id="history" class="view" hidden>
+    <div class="bar"><button class="ghost" type="button" data-go="back">← <span data-i18n="back"></span></button><h2 data-i18n="historyTitle"></h2></div>
+    <p class="small muted" data-i18n="historyNote"></p>
+    <div id="historyList" class="hist-list"></div>
+    <button class="danger ghost" type="button" id="btnDelAll" data-i18n="delAll"></button>
+  </section>
+</main>
+
+<footer class="foot">
+  <p data-i18n="footer"></p>
+  <p><a href="https://github.com/ywchen0711/tennis-coach" target="_blank" rel="noopener" data-i18n="credits"></a></p>
+</footer>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

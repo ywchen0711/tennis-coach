@@ -1,0 +1,29 @@
+{
+  "name": "揮拍教練 Swing Coach",
+  "short_name": "揮拍教練",
+  "description": "網球揮拍動作分析，影片不離開手機 / Tennis swing analysis that runs on your device.",
+  "lang": "zh-Hant-TW",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f3f6f1",
+  "theme_color": "#1f7a4d",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
