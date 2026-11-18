@@ -271,3 +271,13 @@ tr.mt-detail td { background: var(--surface2); }
 .zoom > .ph-fig { width: min(96vw, 1000px, calc((100dvh - 40px) * var(--ar, 1.6))); max-width: none; }
 .zoom > .dg-fig { background: var(--surface); }
 .zoom > .dg-mini { width: min(96vw, 700px); background: var(--surface); }
+.contact-card { border-top: 4px solid var(--ball); }
+.verdicts { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 6px; }
+.verdicts li { padding: 8px 10px; border-radius: 10px; font-weight: 600; font-size: .95rem; line-height: 1.45; }
+.verdicts li.fix { background: color-mix(in srgb, var(--bad) 12%, var(--surface)); color: var(--text); border-left: 4px solid var(--bad); }
+.verdicts li.ok { background: color-mix(in srgb, var(--good) 12%, var(--surface)); border-left: 4px solid var(--good); }
+.verdicts li.lc { background: var(--surface2); border-left: 4px solid var(--mid); color: var(--muted); }
+.dg-cap { font-size: .78rem; font-weight: 700; color: var(--muted); text-align: center; padding: 2px 4px 6px; }
+.contact-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.hgt { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: .9rem; }
+.hgt input { width: 4.6em; font: inherit; padding: 6px 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface2); color: var(--text); min-height: 38px; }

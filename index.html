@@ -15,7 +15,7 @@
 <link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/app.css?v=4">
 <script>
   // theme before first paint
   try { const th = localStorage.getItem('sc-theme'); if (th === 'light' || th === 'dark') document.documentElement.dataset.theme = th; } catch (e) {}
@@ -106,6 +106,7 @@
             <div class="seg" id="segHand"><button type="button" data-v="auto" data-i18n="handAuto"></button><button type="button" data-v="R" data-i18n="handR"></button><button type="button" data-v="L" data-i18n="handL"></button></div></div>
           <div class="set"><span class="set-l" data-i18n="slowmo"></span>
             <div class="seg" id="segSlow"><button type="button" data-v="auto" data-i18n="smAuto"></button><button type="button" data-v="1" data-i18n="sm1"></button><button type="button" data-v="4" data-i18n="sm4"></button><button type="button" data-v="8" data-i18n="sm8"></button></div></div>
+          <div class="set"><span class="set-l" data-i18n="playerHeight"></span><span class="hgt"><input type="number" id="heightSet" min="100" max="230" step="1" inputmode="numeric" aria-label="cm"> cm</span></div>
           <p class="estimate" id="estimate"></p>
           <button class="primary big" type="button" id="btnStart" data-i18n="start"></button>
         </div>
@@ -187,6 +188,6 @@
   <p><a href="https://github.com/ywchen0711/tennis-coach" target="_blank" rel="noopener" data-i18n="credits"></a></p>
 </footer>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<script type="module" src="js/app.js"></script>
+<script type="module" src="js/app.js?v=4"></script>
 </body>
 </html>

@@ -57,6 +57,8 @@ const S = {
   seeFrame: ['看這一刻', 'Show me'],
   ideal: ['建議範圍 {r}', 'Typical good range {r}'],
   inSwings: ['出現在第 {s} 拍', 'Seen in swing {s}'],
+  contactTitle: ['擊球點分析', 'Contact point'], contactTop: ['俯視：擊球點在身體前方多遠', 'From above: how far in front you hit'], contactSide: ['側視：擊球高度', 'From the side: contact height'], serveReach: ['發球擊球點高度', 'Serve contact height'],
+  playerHeight: ['你的身高', 'Your height'], cmNote: ['公分換算以這個身高估計', 'Centimetres are estimated from this height'], filmSide: ['想看準擊球點前後距離，請從側面或斜側面拍攝。', 'For an accurate front-back contact point, film from the side or a diagonal.'],
   keyframes: ['關鍵畫面', 'Key frames'],
   kfBack: ['引拍', 'Backswing'], kfTrophy: ['獎盃姿勢', 'Trophy'], kfContact: ['擊球', 'Contact'], kfFinish: ['收拍', 'Finish'],
   strokeType: ['擊球類型', 'Stroke'], strokeFix: ['類型不對？點選更正', 'Wrong type? Tap to correct'],

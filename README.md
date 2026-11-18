@@ -93,3 +93,8 @@ js/summary.js      summary image
 js/store.js        IndexedDB history
 js/mp4.js          frame-rate reader for MP4/MOV
 ```
+
+## Updating
+
+All module imports, the stylesheet and the entry script carry a `?v=N` query so iPhone Safari picks up
+new code immediately. When changing any file, bump `N` everywhere (`index.html` and every `from './x.js?v=N'`).

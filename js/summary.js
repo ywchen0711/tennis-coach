@@ -1,8 +1,8 @@
 // Shareable summary image (canvas PNG), drawn in the current language.
-import { t, L, getLang } from './i18n.js';
-import { STROKE_NAMES, VIEW_NAMES, AREA_NAMES, METRIC_NAMES, metricText, fmtValue, fmtRange, areaLabel } from './coach.js';
-import { AREAS } from './analysis.js';
-import { diagramSvg, LIGHT, DARK } from './diagrams.js';
+import { t, L, getLang } from './i18n.js?v=4';
+import { STROKE_NAMES, VIEW_NAMES, AREA_NAMES, METRIC_NAMES, metricText, fmtValue, fmtRange, areaLabel, contactVerdicts } from './coach.js?v=4';
+import { AREAS } from './analysis.js?v=4';
+import { diagramSvg, LIGHT, DARK, contactTopSvg, contactSideSvg, serveReachSvg } from './diagrams.js?v=4';
 const svgUrl = (svg) => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
 
 function wrap(ctx, text, maxW) {
@@ -17,7 +17,7 @@ function wrap(ctx, text, maxW) {
 }
 function loadImg(src) { return new Promise((res) => { if (!src) return res(null); const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; }); }
 
-export async function renderSummary(result, { fileName, keyframes, dark }) {
+export async function renderSummary(result, { fileName, keyframes, dark, heightCm = 170 }) {
   const W = 1080, H = 2600; // drawn tall, cropped to the used height at the end
   const c = document.createElement('canvas'); c.width = W; c.height = H;
   const ctx = c.getContext('2d');
@@ -68,6 +68,32 @@ export async function renderSummary(result, { fileName, keyframes, dark }) {
     y += 42;
   }
   y += 34;
+  // contact point: all swings on the maps + verdicts in cm
+  {
+    const pal = dark ? DARK : LIGHT, opt = { hand: result.hand, lang: getLang(), palette: pal };
+    const pt = (s) => ({ n: s.index, type: s.type, fwd: s.metrics.contactFront && s.metrics.contactFront.v, lat: s.metrics.contactFront && s.metrics.contactFront.lat, level: s.metrics.contactHeight && s.metrics.contactHeight.v, reach: s.metrics.contactReach && s.metrics.contactReach.v });
+    const ground = result.swings.filter((s) => s.metrics.contactFront || s.metrics.contactHeight), serves = result.swings.filter((s) => s.metrics.contactReach);
+    const svgs = [];
+    if (ground.length) { const cf = ground.map((s) => s.metrics.contactFront).filter(Boolean); const faded = cf.length && cf.reduce((a, m) => a + m.conf, 0) / cf.length < 0.45; svgs.push(contactTopSvg(ground.map(pt), { ...opt, faded })); svgs.push(contactSideSvg(ground.map(pt), opt)); }
+    if (serves.length) svgs.push(serveReachSvg(serves.map(pt), opt));
+    const verd = contactVerdicts(result.swings, heightCm, getLang());
+    if (svgs.length || verd.length) {
+      ctx.fillStyle = col.text; ctx.font = font(800, 32); ctx.fillText((getLang() === 'zh' ? '🎯 擊球點分析' : '🎯 Contact point'), 56, y + 10); y += 30;
+      const ims = await Promise.all(svgs.slice(0, 3).map((x) => loadImg(svgUrl(x))));
+      const k = Math.max(2, ims.length), iw = (W - 112 - 20) / k, ih = iw * 230 / 300;
+      ctx.fillStyle = col.card; roundRect(ctx, 56, y, W - 112, ih + 20, 22); ctx.fill();
+      ims.forEach((im, i) => { if (im) ctx.drawImage(im, 56 + 10 + i * iw, y + 10, iw - 6, ih * (iw - 6) / iw); });
+      y += ih + 34;
+      ctx.font = font(600, 23);
+      for (const v of verd) {
+        ctx.fillStyle = v.ok ? col.good : v.lowConf ? col.muted : col.bad; ctx.fillText(v.ok ? '✓' : v.lowConf ? '•' : '→', 60, y + 22);
+        ctx.fillStyle = col.text;
+        for (const ln of wrap(ctx, v.text, W - 150).slice(0, 3)) { ctx.fillText(ln, 92, y + 22); y += 32; }
+        y += 6;
+      }
+      y += 36;
+    }
+  }
   // top issues
   ctx.fillStyle = col.text; ctx.font = font(800, 32); ctx.fillText(t('topIssues'), 56, y + 10); y += 30;
   const issues = result.overall.issues.slice(0, 3);

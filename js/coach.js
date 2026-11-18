@@ -1,6 +1,6 @@
 // Coaching library (original wording, zh-TW + en) and helpers that turn metrics into
 // ranked advice. Ranges are coaching heuristics, not lab norms.
-import { rangeFor } from './analysis.js';
+import { rangeFor } from './analysis.js?v=4';
 
 const T = (zh, en) => ({ zh, en });
 
@@ -316,4 +316,47 @@ export function areaLabel(score, lang) {
   if (score >= 0.72) return lang === 'zh' ? '不錯' : 'Good';
   if (score >= 0.5) return lang === 'zh' ? '可加強' : 'Fair';
   return lang === 'zh' ? '優先改善' : 'Work on it';
+}
+
+// Plain-language verdicts for the contact point, per stroke type (or one swing).
+// heightCm converts body-height fractions to approximate centimetres.
+const CONF_OK = 0.45;
+const r5 = (x) => Math.max(5, Math.round(x / 5) * 5);
+export function contactVerdicts(swings, heightCm, lang, single = false) {
+  const zh = lang === 'zh'; const out = [];
+  const groups = {};
+  for (const s of swings) (groups[s.type] = groups[s.type] || []).push(s);
+  for (const [type, list] of Object.entries(groups)) {
+    const name = (single ? (zh ? '這一拍' : 'This swing') : '') + (single ? '' : STROKE_NAMES[type][zh ? 'zh' : 'en']);
+    const avg = (key) => { const ms = list.map((s) => s.metrics[key]).filter(Boolean); if (!ms.length) return null; return { v: ms.reduce((a, m) => a + m.v, 0) / ms.length, conf: ms.reduce((a, m) => a + m.conf, 0) / ms.length, n: ms.length }; };
+    const avgTxt = single || list.length === 1 ? '' : (zh ? '平均' : 'on average ');
+    if (type === 'serve' || type === 'overhead') {
+      const a = avg('contactReach'); if (!a) continue;
+      const r = rangeFor(type, 'contactReach'); const pct = Math.round(a.v * 100), cm = Math.round(a.v * heightCm);
+      let tail, ok = false;
+      if (a.v < r[0]) tail = zh ? `偏低，再往上伸展約 ${r5((r[0] - a.v) * heightCm + 3)} 公分，在最高點、身體前上方（約 1 點鐘方向）擊球` : `low - reach about ${r5((r[0] - a.v) * heightCm + 3)} cm higher and hit at the top, up and in front (about 1 o'clock)`;
+      else { tail = zh ? '在理想範圍內 ✓' : 'in the ideal range ✓'; ok = true; }
+      out.push({ type, ok, lowConf: a.conf < CONF_OK, text: zh ? `${name}擊球點${avgTxt}高於頭部 ${pct}% 身高（約 ${cm} 公分；理想 ≥ ${Math.round(r[0] * 100)}%）：${tail}` : `${name} contact is ${avgTxt}${pct}% of height above the head (about ${cm} cm; ideal ≥ ${Math.round(r[0] * 100)}%): ${tail}` });
+      continue;
+    }
+    const a = avg('contactFront'), h = avg('contactHeight');
+    if (a) {
+      const r = rangeFor(type, 'contactFront'); const pct = Math.round(a.v * 100), cm = Math.round(Math.abs(a.v) * heightCm);
+      const lowConf = a.conf < CONF_OK; let tail, ok = false;
+      const where = a.v >= 0 ? (zh ? `在身體前方 ${pct}% 身高（約 ${cm} 公分` : `${pct}% of height in front of the body (about ${cm} cm`) : (zh ? `在身體後方 ${-pct}% 身高（約 ${cm} 公分` : `${-pct}% of height behind the body (about ${cm} cm`);
+      if (lowConf) tail = zh ? '從這個拍攝角度，前後距離量不準；想看準擊球點，請從側面或斜側面拍' : 'front-back distance is unreliable from this camera angle; film from the side or a diagonal to check it';
+      else if (a.v < r[0]) tail = zh ? `太靠近身體，往前約 ${r5((r[0] - a.v) * heightCm + 5)} 公分` : `too close to the body - move it about ${r5((r[0] - a.v) * heightCm + 5)} cm further in front`;
+      else if (a.v > r[1]) tail = zh ? `太前面，讓球再進來約 ${r5((a.v - r[1]) * heightCm + 5)} 公分` : `too far out - let the ball come about ${r5((a.v - r[1]) * heightCm + 5)} cm closer`;
+      else { tail = zh ? '在理想範圍內 ✓' : 'in the ideal range ✓'; ok = true; }
+      out.push({ type, ok, lowConf, text: zh ? `${name}擊球點${avgTxt}${where}；理想 ${Math.round(r[0] * 100)}–${Math.round(r[1] * 100)}%）：${tail}` : `${name} contact is ${avgTxt}${where}; ideal ${Math.round(r[0] * 100)}-${Math.round(r[1] * 100)}%): ${tail}` });
+    }
+    if (h) {
+      const r = rangeFor(type, 'contactHeight'); let tail, ok = false;
+      if (h.v < r[0]) tail = zh ? '偏低，用膝蓋降低身體，或等球彈到腰胸高度' : 'low - bend your knees or wait for the ball to reach waist-chest height';
+      else if (h.v > r[1]) tail = zh ? '偏高，退一步讓球落到腰胸之間' : 'high - step back and let it drop to waist-chest height';
+      else { tail = zh ? '在腰到胸之間 ✓' : 'between waist and chest ✓'; ok = true; }
+      out.push({ type, ok, lowConf: h.conf < CONF_OK, text: zh ? `${name}擊球高度${avgTxt}在${levelText(h.v, lang)}：${tail}` : `${name} contact height is ${avgTxt}at ${levelText(h.v, lang)}: ${tail}` });
+    }
+  }
+  return out;
 }

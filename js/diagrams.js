@@ -2,8 +2,8 @@
 // ideal zone with an arrow for the fix, plus an overlay drawn on the player's own video frame.
 // Drawn for a right-hander and mirrored for left-handers. Colours default to CSS variables
 // (light/dark); the summary image passes literal colours.
-import { rangeFor } from './analysis.js';
-import { fmtValue, fmtRange } from './coach.js';
+import { rangeFor } from './analysis.js?v=4';
+import { fmtValue, fmtRange } from './coach.js?v=4';
 
 const CSS = { ink: 'var(--text)', muted: 'var(--muted)', line: 'var(--line)', soft: 'var(--surface2)', ideal: 'var(--good)', you: 'var(--bad)', net: 'var(--info)', bg: 'var(--surface)' };
 export const LIGHT = { ink: '#13201a', muted: '#5a6a61', line: '#cfd8cc', soft: '#eef3ec', ideal: '#1f8a4c', you: '#c2412d', net: '#2563eb', bg: '#ffffff' };
@@ -440,4 +440,80 @@ export function overlaySvg(m, type, { pose, aspect, F, BHimg, hand = 'R', lang =
   }
   if (note) label([W / 2, H - 4], note, '#fde68a');
   return `<svg class="ovl" viewBox="0 0 ${r1(W)} ${H}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">${o.join('')}</svg>`;
+}
+
+// ---------- contact-point maps (all swings at once) ----------
+export const TYPE_COLORS = { forehand: '#f97316', backhand1: '#8b5cf6', backhand2: '#0ea5e9', volley: '#d4a20b', serve: '#ec4899', overhead: '#ec4899' };
+const TYPE_TX = { forehand: ['正拍', 'FH'], backhand1: ['單反', '1H BH'], backhand2: ['雙反', '2H BH'], volley: ['截擊', 'Volley'], serve: ['發球', 'Serve'], overhead: ['高壓', 'Smash'] };
+const zoneLat = (type) => (type === 'backhand1' ? -0.2 : type === 'backhand2' ? -0.14 : type === 'volley' ? 0 : 0.24);
+function numDot(g, x, y, n, color, sel) {
+  if (sel) g.circle(x, y, 13, g.P.ink, 'none', 2.5);
+  g.circle(x, y, 9, '#fff', color, 1.5);
+  g.o.push(`<text x="${r1(g.X(x))}" y="${r1(y + 3.5)}" fill="#fff" font-size="10" font-weight="800" text-anchor="middle" font-family="sans-serif">${n}</text>`);
+}
+function typeLegend(g, types) {
+  let x = 8;
+  for (const t of types) {
+    const s = TYPE_TX[t][g.lang === 'zh' ? 0 : 1];
+    g.o.push(`<circle cx="${x + 5}" cy="${g.H - 12}" r="5" fill="${TYPE_COLORS[t]}"/><text x="${x + 14}" y="${g.H - 8}" fill="${g.P.muted}" font-size="11" font-weight="600" font-family="sans-serif">${esc(s)}</text>`);
+    x += 22 + s.length * (g.lang === 'zh' ? 12 : 7);
+  }
+}
+// pts: [{n, type, fwd, lat, level, conf, sel}]
+export function contactTopSvg(pts, { hand = 'R', lang = 'zh', palette, faded = false, note = '' } = {}) {
+  const g = ctxFor(300, 230, hand, palette || CSS, lang); const { P } = g;
+  const s = 230, cx = 150, cy = 182;
+  g.line(14, 22, g.W - 14, 22, P.net, 2, '6 5'); g.text(g.W / 2, 16, tx('net', lang) + ' ↑', P.net, 11);
+  const types = [...new Set(pts.map((p) => p.type))];
+  for (const t of types) {
+    const r = rangeFor(t, 'contactFront') || [0.1, 0.5];
+    const zx0 = cx + (zoneLat(t) - 0.13) * s, zw = 0.26 * s, zy0 = Math.max(32, cy - Math.min(r[1], 0.65) * s), zh = cy - r[0] * s - zy0;
+    g.rect(zx0, zy0, zw, zh, P.ideal, P.ideal, 8, faded ? 0.1 : 0.2); g.rect(zx0, zy0, zw, zh, 'none', P.ideal, 8, faded ? 0.5 : 1, '5 4');
+    g.text(zx0 + zw / 2, zy0 + 13, `${tx('zone', lang)}·${TYPE_TX[t][lang === 'zh' ? 0 : 1]}`, P.ideal, 10);
+  }
+  g.rect(cx - 34, cy + 10, 14, 22, P.soft, P.muted, 6); g.rect(cx + 20, cy + 4, 14, 22, P.soft, P.muted, 6);
+  g.line(cx - 22, cy + 4, cx + 22, cy + 4, P.muted, 4); g.line(cx - 36, cy - 2, cx + 36, cy - 2, P.ink, 4); g.circle(cx, cy - 2, 11, P.ink, P.bg, 2.5);
+  const sel = pts.find((p) => p.sel);
+  if (sel && Number.isFinite(sel.fwd)) {
+    const r = rangeFor(sel.type, 'contactFront') || [0.1, 0.5];
+    const px = cx + (Number.isFinite(sel.lat) ? sel.lat : zoneLat(sel.type)) * s, py = cy - sel.fwd * s;
+    const ty = clamp(py, cy - Math.min(r[1], 0.65) * s + 20, cy - r[0] * s - 8), tx0 = clamp(px, cx + (zoneLat(sel.type) - 0.1) * s, cx + (zoneLat(sel.type) + 0.1) * s);
+    g.arrow(px, py, tx0, ty, P.you);
+  }
+  for (const p of pts.slice().sort((a, b) => (a.sel ? 1 : 0) - (b.sel ? 1 : 0))) {
+    if (!Number.isFinite(p.fwd)) continue;
+    const px = clamp(cx + (Number.isFinite(p.lat) ? p.lat : zoneLat(p.type)) * s, 12, g.W - 12), py = clamp(cy - p.fwd * s, 30, cy + 26);
+    numDot(g, px, py, p.n, TYPE_COLORS[p.type], p.sel);
+  }
+  if (note) g.text(g.W / 2, 36, note, P.muted, 10);
+  typeLegend(g, types);
+  return wrapSvg(g, 'contact');
+}
+export function contactSideSvg(pts, { hand = 'R', lang = 'zh', palette } = {}) {
+  const g = ctxFor(300, 230, hand, palette || CSS, lang); const { P } = g;
+  const f = sideFigure(g, 70, 200, 180, P.ink, 3, 0.9);
+  const lv = (v) => f.hipY - v * (f.hipY - f.shY);
+  const types = [...new Set(pts.map((p) => p.type))];
+  const r = rangeFor(types[0] || 'forehand', 'contactHeight') || [0.05, 1.05];
+  const y0 = lv(Math.min(r[1], 1.25)), y1 = lv(Math.max(r[0], -0.4));
+  g.rect(112, y0, 128, y1 - y0, P.ideal, P.ideal, 8, 0.2); g.rect(112, y0, 128, y1 - y0, 'none', P.ideal, 8, 1, '5 4');
+  g.text(176, y0 - 5, tx('zone', lang), P.ideal, 10);
+  for (const [k, v] of [['shoulder', 1], ['chest', 0.68], ['waist', 0.34], ['hip', 0]]) { g.line(100, lv(v), 246, lv(v), P.line, 1, '3 3'); g.text(250, lv(v) + 4, tx(k, lang), P.muted, 10, 'start'); }
+  const n = pts.length;
+  pts.forEach((p, i) => { if (!Number.isFinite(p.level)) return; const x = 124 + (n > 1 ? i * (104 / (n - 1)) : 52); numDot(g, x, clamp(lv(p.level), 14, 196), p.n, TYPE_COLORS[p.type], p.sel); });
+  typeLegend(g, types);
+  return wrapSvg(g, 'height');
+}
+export function serveReachSvg(pts, { hand = 'R', lang = 'zh', palette } = {}) {
+  const g = ctxFor(300, 230, hand, palette || CSS, lang); const { P } = g;
+  const H = 160, ground = 214; const f = sideFigure(g, 110, ground, H, P.ink, 3, 0.9);
+  const noseY = f.head[1]; const r = rangeFor('serve', 'contactReach') || [0.18, 0.7];
+  const zy1 = noseY - r[0] * H, zy0 = Math.max(6, noseY - 0.42 * H);
+  g.rect(f.head[0] + 4, zy0, 70, zy1 - zy0, P.ideal, P.ideal, 8, 0.22); g.rect(f.head[0] + 4, zy0, 70, zy1 - zy0, 'none', P.ideal, 8, 1, '5 4');
+  g.text(f.head[0] + 80, zy0 + 12, tx('reach', lang), P.ideal, 11, 'start'); g.text(f.head[0] + 80, zy0 + 26, tx('oneOclock', lang), P.ideal, 10, 'start');
+  g.line(f.head[0] - 30, noseY, f.head[0] + 140, noseY, P.line, 1, '3 3');
+  const n = pts.length;
+  pts.forEach((p, i) => { if (!Number.isFinite(p.reach)) return; numDot(g, f.head[0] + 14 + (n > 1 ? i * (52 / (n - 1)) : 26), clamp(noseY - p.reach * H, 12, ground - 20), p.n, TYPE_COLORS[p.type], p.sel); });
+  typeLegend(g, [...new Set(pts.map((p) => p.type))]);
+  return wrapSvg(g, 'reach');
 }

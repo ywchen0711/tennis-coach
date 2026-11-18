@@ -1,13 +1,13 @@
 // Swing Coach - UI controller.
-import { t, L, setLang, getLang, applyI18n, fmtDuration, fmtTime } from './i18n.js';
-import { probeVideo } from './mp4.js';
-import { getLandmarker, trackClip, scanMotion, suggestTrim, captureFrame, seekTo, QUALITY, suggestQuality, delegateName } from './pose.js';
-import { selectTrack, buildTrack, analyze, poseAt, angleSeries, rankIssues, rankStrengths, AREAS, STROKES, CONF_MIN, sideIdx } from './analysis.js';
-import { STROKE_NAMES, STROKE_SHORT, VIEW_NAMES, VIEW_NOTES, AREA_NAMES, PHASE_NAMES, METRIC_NAMES, metricText, fmtValue, fmtRange, CONF_LABEL, areaLabel } from './coach.js';
-import { lineChart, drawSkeleton, drawTrail, cssVar, fitCanvas } from './charts.js';
-import { saveAnalysis, listAnalyses, deleteAnalysis, clearAnalyses } from './store.js';
-import { renderSummary } from './summary.js';
-import { diagramSvg, overlaySvg, skeletonSvg } from './diagrams.js';
+import { t, L, setLang, getLang, applyI18n, fmtDuration, fmtTime } from './i18n.js?v=4';
+import { probeVideo } from './mp4.js?v=4';
+import { getLandmarker, trackClip, scanMotion, suggestTrim, captureFrame, seekTo, QUALITY, suggestQuality, delegateName } from './pose.js?v=4';
+import { selectTrack, buildTrack, analyze, poseAt, angleSeries, rankIssues, rankStrengths, AREAS, STROKES, CONF_MIN, sideIdx } from './analysis.js?v=4';
+import { STROKE_NAMES, STROKE_SHORT, VIEW_NAMES, VIEW_NOTES, AREA_NAMES, PHASE_NAMES, METRIC_NAMES, metricText, fmtValue, fmtRange, CONF_LABEL, areaLabel, contactVerdicts } from './coach.js?v=4';
+import { lineChart, drawSkeleton, drawTrail, cssVar, fitCanvas } from './charts.js?v=4';
+import { saveAnalysis, listAnalyses, deleteAnalysis, clearAnalyses } from './store.js?v=4';
+import { renderSummary } from './summary.js?v=4';
+import { diagramSvg, overlaySvg, skeletonSvg, contactTopSvg, contactSideSvg, serveReachSvg } from './diagrams.js?v=4';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -26,6 +26,12 @@ const work = document.createElement('video');
 work.muted = true; work.playsInline = true; work.setAttribute('playsinline', ''); work.preload = 'auto';
 Object.assign(work.style, { position: 'fixed', left: '0', bottom: '0', width: '4px', height: '4px', opacity: '0.01', pointerEvents: 'none', zIndex: '-1' });
 document.body.appendChild(work);
+
+// player height for cm estimates (saved on this device)
+function playerHeight() { const v = parseFloat(store.get('sc-height')); return v >= 100 && v <= 230 ? v : 170; }
+function setPlayerHeight(v) { v = Math.round(+v); if (v >= 100 && v <= 230) { store.set('sc-height', String(v)); return true; } return false; }
+$('#heightSet').value = playerHeight();
+$('#heightSet').addEventListener('change', (e) => { if (!setPlayerHeight(e.target.value)) e.target.value = playerHeight(); });
 
 // ---------- views ----------
 function show(id) {
@@ -345,6 +351,43 @@ function visualHtml(m, type, sw, good = false) {
   if (!dg && !ph) return '';
   return `<div class="dg-row">${dg ? `<figure class="dg-fig" data-zoom>${dg}</figure>` : ''}${ph}</div>`;
 }
+function photoHtml(m, type, sw, good = false) {
+  if (state.fromHistory || !state.track || !Number.isFinite(m.time)) return '';
+  const pose = poseAt(state.track, m.time); if (!pose) return '';
+  const ov = overlaySvg(m, type, { pose, aspect: state.aspect, F: sw && sw.F, BHimg: state.result.BHimg, hand: state.result.hand, lang: lang(), good });
+  return `<figure class="ph-fig" data-zoom style="aspect-ratio:${state.aspect};--ar:${state.aspect}"><img data-ft="${m.time}" alt="">${ov}<figcaption>${esc(fmtTime(m.time))}</figcaption></figure>`;
+}
+// always-visible contact-point card: all swings on one map, the player's frame, verdicts in cm
+function contactCardHtml(selSw) {
+  const r = state.result; if (!r.swings.length) return '';
+  const opt = { hand: r.hand, lang: lang() };
+  const ground = r.swings.filter((s) => s.metrics.contactFront || s.metrics.contactHeight);
+  const serves = r.swings.filter((s) => s.metrics.contactReach);
+  const pt = (s) => ({ n: s.index, type: s.type, sel: selSw === s, fwd: s.metrics.contactFront && s.metrics.contactFront.v, lat: s.metrics.contactFront && s.metrics.contactFront.lat, level: s.metrics.contactHeight && s.metrics.contactHeight.v, reach: s.metrics.contactReach && s.metrics.contactReach.v });
+  const showGround = selSw ? !selSw.metrics.contactReach : ground.length > 0;
+  const showServe = selSw ? !!selSw.metrics.contactReach : serves.length > 0;
+  const figs = [];
+  let faded = false;
+  if (showGround && ground.length) {
+    const confs = ground.map((s) => s.metrics.contactFront).filter(Boolean).map((m) => m.conf);
+    faded = confs.length > 0 && confs.reduce((a, b) => a + b, 0) / confs.length < CONF_MIN;
+    figs.push(`<figure class="dg-fig" data-zoom>${contactTopSvg(ground.map(pt), { ...opt, faded, note: faded ? (lang() === 'zh' ? '此角度前後距離僅供參考' : 'Front-back distance is rough from this angle') : '' })}<figcaption class="dg-cap">${esc(t('contactTop'))}</figcaption></figure>`);
+    figs.push(`<figure class="dg-fig" data-zoom>${contactSideSvg(ground.map(pt), opt)}<figcaption class="dg-cap">${esc(t('contactSide'))}</figcaption></figure>`);
+  }
+  if (showServe && serves.length) figs.push(`<figure class="dg-fig" data-zoom>${serveReachSvg(serves.map(pt), opt)}<figcaption class="dg-cap">${esc(t('serveReach'))}</figcaption></figure>`);
+  // the player's own contact frame
+  const ps = selSw || ground[0] || serves[0];
+  const pm = ps && (ps.metrics.contactReach || ps.metrics.contactFront || ps.metrics.contactHeight);
+  const photo = pm ? photoHtml(pm, ps.type, ps, pm.score >= 0.75) : '';
+  const verd = contactVerdicts(selSw ? [selSw] : r.swings, playerHeight(), lang(), !!selSw);
+  return `<div class="card contact-card"><h3>🎯 ${esc(t('contactTitle'))}${selSw ? ` · #${selSw.index} ${esc(L(STROKE_SHORT[selSw.type]))}` : ''}</h3>
+    <ul class="verdicts">${verd.map((v) => `<li class="${v.ok ? 'ok' : v.lowConf ? 'lc' : 'fix'}">${esc(v.text)}</li>`).join('')}</ul>
+    <div class="dg-row">${figs.join('')}${photo}</div>
+    ${faded ? `<p class="note">⚠ ${esc(t('filmSide'))}</p>` : ''}
+    <div class="contact-foot">${ps && !state.fromHistory ? `<button class="chip" type="button" data-seek="${ps.phases.contact}">▶ ${esc(t('toContact'))} #${ps.index}</button>` : ''}
+      <label class="hgt">${esc(t('playerHeight'))} <input type="number" class="heightIn" min="100" max="230" step="1" inputmode="numeric" value="${playerHeight()}"> cm</label></div>
+    <p class="note">${esc(t('cmNote'))}</p></div>`;
+}
 function issueCard(i, m, type, extra = '', mFull = null, sw = null) {
   const txt = metricText(m.key, type); const d = txt && txt[m.dir];
   const unitOv = m.unitOverride || (m.unit === 'pctBH' ? 'pctBH' : undefined);
@@ -374,6 +417,7 @@ function renderCoach() {
   if (!s) {
     const types = Object.entries(r.overall.byType).map(([k, n]) => `${L(STROKE_NAMES[k])} ×${n}`).join(' · ');
     h.push(`<div class="card"><div class="sum-line"><span class="big">${esc(t('swingsFound', { n: r.swings.length }))}</span><span class="muted">${esc(types)}</span></div><p class="note" style="margin-top:6px">${esc(L(VIEW_NOTES[r.view.key]))}</p></div>`);
+    h.push(contactCardHtml(null));
     h.push(areasHtml(r.overall.areas));
     h.push(`<h3 style="margin:6px 2px 0">${esc(t('topIssues'))}</h3>`);
     if (!r.overall.issues.length) h.push(`<div class="card"><p>${esc(t('noIssues'))}</p></div>`);
@@ -386,6 +430,7 @@ function renderCoach() {
     h.push(consistencyHtml());
   } else {
     h.push(`<div class="card"><div class="type-pick"><b>${esc(t('strokeType'))}</b><select id="typeSel" ${state.fromHistory ? 'disabled' : ''}>${STROKES.map((k) => `<option value="${k}" ${k === s.type ? 'selected' : ''}>${esc(L(STROKE_NAMES[k]))}</option>`).join('')}</select><span class="note">${esc(t('strokeFix'))}</span></div></div>`);
+    h.push(contactCardHtml(s));
     if (!state.fromHistory) h.push(keyframesHtml(s));
     h.push(areasHtml(s.areas));
     const issues = rankIssues(s, 3);
@@ -403,6 +448,7 @@ function renderCoach() {
   el.querySelectorAll('#slowFix button').forEach((b) => b.addEventListener('click', () => { state.slow = b.dataset.v; recompute(); toast(t('slowIs', { n: b.dataset.v })); }));
   const ts = $('#typeSel'); if (ts) ts.addEventListener('change', () => { const sw = selSwing(); state.overrides[sw.key] = ts.value; recompute(); });
   el.querySelectorAll('.kf figure').forEach((f) => f.addEventListener('click', () => { seekVideo(+f.dataset.t); $('#resVideo').pause(); }));
+  el.querySelectorAll('.heightIn').forEach((inp) => inp.addEventListener('change', () => { if (setPlayerHeight(inp.value)) { $('#heightSet').value = playerHeight(); renderCoach(); } else inp.value = playerHeight(); }));
   hydrate(el);
 }
 function keyframesHtml(s) {
@@ -745,7 +791,7 @@ $('#btnSave').addEventListener('click', async () => {
     const tt = state.track.t[s.idx.c]; const src = await grab(tt); const pose = poseAt(state.track, tt);
     return src ? { src, svg: pose ? skeletonSvg(pose, state.aspect) : '' } : null;
   }))).filter(Boolean);
-  const blob = await renderSummary(r, { fileName: state.file ? state.file.name : '', keyframes: kfs, dark: effectiveDark() });
+  const blob = await renderSummary(r, { fileName: state.file ? state.file.name : '', keyframes: kfs, dark: effectiveDark(), heightCm: playerHeight() });
   if (!blob) return;
   const name = `swing-coach-${new Date().toISOString().slice(0, 10)}.png`;
   const file = new File([blob], name, { type: 'image/png' });

@@ -2,7 +2,7 @@
 // The video is stepped frame by frame by seeking (requestVideoFrameCallback confirms the
 // new frame where the browser supports it). Each frame is drawn at reduced resolution and
 // only landmarks are kept, so memory stays low on phones.
-import { FilesetResolver, PoseLandmarker } from '../vendor/mediapipe/vision_bundle.js';
+import { FilesetResolver, PoseLandmarker } from '../vendor/mediapipe/vision_bundle.js?v=4';
 
 const BASE = new URL('..', import.meta.url).href;
 export const QUALITY = {
