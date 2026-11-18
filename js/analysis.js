@@ -181,7 +181,8 @@ export function buildTrack(frames, pick, aspect, opts = {}) {
       for (let i = 0; i < n; i++) arr[i * ST + j * 3 + c] = ch[i];
     }
   }
-  return { n, t, img, world, ok, aspect, swaps };
+  const rk = frames.some((f) => f.rackets) ? frames.map((f) => f.rackets || []) : null;
+  return { n, t, img, world, ok, aspect, swaps, rk };
 }
 
 // ---------- accessors ----------
@@ -301,6 +302,14 @@ export const METRICS = {
   trunkLean: { area: 'balance', unit: 'deg', impact: 0.5 },
   finish: { area: 'finish', unit: 'pct', impact: 0.6 },
   recovery: { area: 'finish', unit: 'pctBH', impact: 0.3 },
+  racketFace: { area: 'contact', unit: 'face', impact: 0.6, racket: true },
+  racketHeadHeight: { area: 'contact', unit: 'pctBH', impact: 0.4, racket: true },
+  racketDrop: { area: 'power', unit: 'pctBH', impact: 0.5, racket: true },
+  swingPath: { area: 'power', unit: 'deg', impact: 0.5, racket: true },
+  racketLag: { area: 'power', unit: 'deg', impact: 0.35, racket: true },
+  takeBack: { area: 'prep', unit: 'deg', impact: 0.35, racket: true },
+  racketFinish: { area: 'finish', unit: 'pctBH', impact: 0.35, racket: true },
+  serveDrop: { area: 'prep', unit: 'pctBH', impact: 0.5, racket: true },
 };
 export const AREAS = ['prep', 'legs', 'contact', 'power', 'balance', 'finish'];
 // [lo, hi, tolerance] per stroke type
@@ -330,6 +339,11 @@ const RANGES = {
     trunkLean: [0, 32, 15], finish: [0.7, 1, 0.5],
   },
 };
+// racket ranges (coaching heuristics; face: negative = closed, positive = open, degrees from vertical)
+const RK_GROUND = { racketFace: [-15, 8, 15], racketHeadHeight: [-0.15, 0.15, 0.12], racketDrop: [0.06, 0.4, 0.08], swingPath: [8, 45, 15], racketLag: [15, 80, 25], takeBack: [-10, 100, 40], racketFinish: [-0.05, 0.6, 0.15] };
+for (const k of ['forehand', 'backhand1', 'backhand2']) Object.assign(RANGES[k], RK_GROUND);
+Object.assign(RANGES.volley, { racketFace: [0, 25, 15], racketHeadHeight: [0.02, 0.4, 0.1], swingPath: [-30, 10, 15] });
+Object.assign(RANGES.serve, { racketHeadHeight: [0.1, 0.6, 0.12], serveDrop: [0.05, 0.45, 0.08] });
 RANGES.overhead = { ...RANGES.serve }; delete RANGES.overhead.tossArm;
 export const STROKES = ['forehand', 'backhand1', 'backhand2', 'volley', 'serve', 'overhead'];
 export function rangeFor(type, key) { return (RANGES[type] || RANGES.forehand)[key]; }
@@ -371,6 +385,7 @@ export function analyze(tr, opts = {}) {
   const spd = hand === 'R' ? spdR : spdL;
   const yawSh = yawSeries(tr, LM.rSh, LM.lSh), yawHip = yawSeries(tr, LM.rHip, LM.lHip);
   const ctx = { tr, BH, BHimg, fps, S, spd, yawSh, yawHip, hand, spdOff: hand === 'R' ? spdL : spdR };
+  const RK = tr.rk ? buildRacket(tr, S, BHimg, fps) : null; ctx.RK = RK;
 
   let sf = typeof opts.slowmo === 'number' && opts.slowmo > 0 ? opts.slowmo : 1;
   let slowAuto = 1;
@@ -417,6 +432,7 @@ export function analyze(tr, opts = {}) {
   return {
     n, fps, fpsReal: fps * sf, peakWidth: ctx.peakWidth, slowHint: sf === 1 && ctx.peakWidth > 0.6, duration: dur, BH, BHimg, hand, handAuto, handUnsure, slowmo: sf, slowAuto, view, swings, consistency, overall,
     series: { t: tr.t, speed: spd, speedOff: ctx.spdOff, yawSh, yawHip },
+    racket: RK ? { hx: RK.hx, hy: RK.hy, ok: RK.ok, face: RK.face, rate: RK.rate } : null,
     tracked: valid / n, swaps: tr.swaps,
   };
 }
@@ -707,6 +723,7 @@ function analyzeSwing(ctx, c0, prevC, nextC, overrides) {
       put('recovery', m / BHimg, visW(fin, r1, [27, 28]) * 0.6 * rs(fin, r1), fin);
     }
   }
+  if (ctx.RK) racketMetrics(ctx, { lo, hi, u, b, c, fin, trophy, type, isServe, F, put, sf });
   // per-area scores
   const areas = {};
   for (const a of AREAS) {
@@ -807,3 +824,97 @@ export function angleSeries(tr, hand, i0, i1) {
   return o;
 }
 export const _test = { yawSeries, bodyAxes, viewOf, bodyHeight, speedSeries };
+
+// ---------- racket ----------
+// Per frame: pick the detected racket box nearest the hitting wrist, estimate the head point
+// (edge centroid of the half of the box away from the hand), fill short gaps, smooth.
+function buildRacket(tr, S, BHimg, fps) {
+  const n = tr.n, A = tr.aspect;
+  const hx = new Float32Array(n).fill(NaN), hy = new Float32Array(n).fill(NaN), sc = new Float32Array(n), ang = new Float32Array(n).fill(NaN), ratio = new Float32Array(n).fill(NaN), ok = new Uint8Array(n);
+  let found = 0, framesWithPlayer = 0;
+  for (let i = 0; i < n; i++) {
+    if (!tr.ok[i]) continue; framesWithPlayer++;
+    const wx = tr.img[i * ST + S.wr * 3], wy = tr.img[i * ST + S.wr * 3 + 1];
+    let best = null, bd = 1e9;
+    for (const b of tr.rk[i] || []) {
+      const bx = (b.x + b.w / 2) * A, by = b.y + b.h / 2;
+      const dx = Math.max(b.x * A - wx, 0, wx - (b.x + b.w) * A), dy = Math.max(b.y - wy, 0, wy - (b.y + b.h));
+      const d = Math.hypot(dx, dy) - b.s * 0.05;
+      if (d < bd && d < 0.35 * BHimg) { bd = d; best = { b, bx, by }; }
+    }
+    if (!best) continue;
+    const b = best.b;
+    // tip = box corner farthest from the hand; head centre about 3/4 of the way out
+    const corners = [[b.x * A, b.y], [(b.x + b.w) * A, b.y], [b.x * A, b.y + b.h], [(b.x + b.w) * A, b.y + b.h]];
+    let far = corners[0], fd = -1; for (const cpt of corners) { const d = Math.hypot(cpt[0] - wx, cpt[1] - wy); if (d > fd) { fd = d; far = cpt; } }
+    const px = wx + 0.75 * (far[0] - wx), py = wy + 0.75 * (far[1] - wy);
+    const L = Math.hypot(px - wx, py - wy); if (L > 0.5 * BHimg || L < 0.12 * BHimg) continue;
+    // the racket continues roughly from the forearm (lag rarely exceeds ~120 degrees)
+    const ex = tr.img[i * ST + S.el * 3], ey = tr.img[i * ST + S.el * 3 + 1];
+    const fa = [wx - ex, wy - ey], sh = [px - wx, py - wy];
+    const cosA = (fa[0] * sh[0] + fa[1] * sh[1]) / ((Math.hypot(fa[0], fa[1]) * L) || 1);
+    if (cosA < -0.5) continue;
+    hx[i] = px; hy[i] = py; sc[i] = b.s; ang[i] = b.ang; ratio[i] = b.ratio; ok[i] = 1; found++;
+  }
+  const maxGap = Math.max(1, Math.round(0.15 * fps)); let last = -1;
+  for (let i = 0; i < n; i++) {
+    if (ok[i] !== 1) continue;
+    if (last >= 0 && i - last > 1 && i - last <= maxGap + 1) for (let g = last + 1; g < i; g++) { const a = (g - last) / (i - last); hx[g] = hx[last] * (1 - a) + hx[i] * a; hy[g] = hy[last] * (1 - a) + hy[i] * a; sc[g] = Math.min(sc[last], sc[i]) * 0.7; ok[g] = 2; }
+    last = i;
+  }
+  const sx = Float32Array.from(hx), sy = Float32Array.from(hy);
+  for (let i = 1; i < n - 1; i++) if (ok[i] && ok[i - 1] && ok[i + 1]) { sx[i] = (hx[i - 1] + 2 * hx[i] + hx[i + 1]) / 4; sy[i] = (hy[i - 1] + 2 * hy[i] + hy[i + 1]) / 4; }
+  const outx = new Float32Array(n), outy = new Float32Array(n);
+  for (let i = 0; i < n; i++) { outx[i] = ok[i] ? sx[i] / A : NaN; outy[i] = ok[i] ? sy[i] : NaN; }
+  return { hx: outx, hy: outy, ax: sx, ay: sy, sc, ang, ratio, ok, rate: framesWithPlayer ? found / framesWithPlayer : 0, face: new Float32Array(n).fill(NaN) };
+}
+function racketMetrics(ctx, { lo, hi, b, c, trophy, type, isServe, F, put, sf }) {
+  const { tr, RK, S, BHimg, fps } = ctx; const T = (i) => tr.t[i];
+  const W2 = (i, k) => [tr.img[i * ST + k * 3], tr.img[i * ST + k * 3 + 1]];
+  const has = (i) => i >= 0 && i < tr.n && RK.ok[i];
+  const near = (i, r = 2) => { for (let d = 0; d <= r; d++) { if (has(i - d)) return i - d; if (has(i + d)) return i + d; } return -1; };
+  const cover = (i0, i1) => { let k = 0, m = 0; for (let i = Math.max(0, i0); i <= Math.min(tr.n - 1, i1); i++) { m++; if (RK.ok[i] === 1) k++; } return m ? k / m : 0; };
+  const fx = F ? F[0] : 0, side = Math.abs(fx), fsg = fx >= 0 ? 1 : -1;
+  const blurF = fps * sf >= 50 ? 1 : 0.75;
+  const ci = near(c, Math.max(1, Math.round(0.04 * fps)));
+  if (ci >= 0) {
+    const w = W2(ci, S.wr), hh = (w[1] - RK.ay[ci]) / BHimg;
+    put('racketHeadHeight', hh, Math.min(1, RK.sc[ci] + 0.3) * 0.8 * blurF * (RK.ok[ci] === 1 ? 1 : 0.7), ci);
+    // face: tilt of the head's long axis from vertical, seen nearly edge-on from a side-ish view
+    const fr = []; for (let i = ci - 1; i <= ci + 1; i++) if (has(i) && Number.isFinite(RK.ang[i]) && RK.ratio[i] < 0.55) fr.push(i);
+    if (!isServe && fr.length) {
+      const vals = fr.map((i) => {
+        const a = RK.ang[i] * Math.PI / 180; let tx = Math.cos(a), ty = Math.sin(a); if (ty > 0) { tx = -tx; ty = -ty; }
+        const tilt = 90 - Math.abs(RK.ang[i]);
+        return (tx * fsg > 0 ? -1 : 1) * tilt;
+      });
+      const v = vals.reduce((x, y) => x + y, 0) / vals.length;
+      const r = fr.reduce((x, i) => x + RK.ratio[i], 0) / fr.length;
+      const conf = Math.min(1, RK.sc[ci] + 0.25) * (side > 0.6 ? 0.9 : side > 0.4 ? 0.55 : 0.25) * (r < 0.4 ? 1 : 0.6) * blurF * 0.8;
+      put('racketFace', v, conf, ci, { edgeRatio: r });
+      RK.face[ci] = v;
+    }
+  }
+  if (!isServe) {
+    let maxY = -1, mi = -1; for (let i = b; i < c; i++) if (has(i) && RK.ay[i] > maxY) { maxY = RK.ay[i]; mi = i; }
+    if (mi >= 0 && ci >= 0 && type !== 'volley') put('racketDrop', (maxY - RK.ay[ci]) / BHimg, 0.65 * cover(b, c) * blurF * Math.min(1, RK.sc[mi] + 0.2), mi);
+    const p0 = near(idxAt(tr, T(c) - 0.08 * sf), 2), p1 = near(idxAt(tr, T(c) + 0.08 * sf), 2);
+    if (p0 >= 0 && p1 >= 0 && p1 > p0) {
+      const dx = Math.abs(RK.ax[p1] - RK.ax[p0]), dy = RK.ay[p0] - RK.ay[p1];
+      if (Math.hypot(dx, dy) > 0.03 * BHimg) put('swingPath', Math.atan2(dy, Math.max(1e-4, dx)) * 180 / Math.PI, 0.8 * (side > 0.75 ? 1 : side > 0.5 ? 0.5 : 0.3) * cover(p0, p1) * blurF, ci >= 0 ? ci : c);
+    }
+    const li = near(idxAt(tr, T(c) - 0.06 * sf), 1);
+    if (li >= 0 && type !== 'volley') {
+      const e = W2(li, S.el), w = W2(li, S.wr); const f1 = [w[0] - e[0], w[1] - e[1]], s1 = [RK.ax[li] - w[0], RK.ay[li] - w[1]];
+      const d = (f1[0] * s1[0] + f1[1] * s1[1]) / ((Math.hypot(f1[0], f1[1]) * Math.hypot(s1[0], s1[1])) || 1);
+      put('racketLag', Math.acos(clamp(d, -1, 1)) * 180 / Math.PI, 0.6 * (side > 0.75 ? 1 : 0.45) * blurF, li);
+    }
+    const bi = near(b, 2);
+    if (bi >= 0 && type !== 'volley') { const w = W2(bi, S.wr); put('takeBack', Math.atan2(w[1] - RK.ay[bi], Math.abs(RK.ax[bi] - w[0]) + 1e-4) * 180 / Math.PI, 0.65 * Math.min(1, RK.sc[bi] + 0.3), bi); }
+    let fi = -1, best = 9; for (let i = c; i <= Math.min(hi, idxAt(tr, T(c) + 0.7 * sf)); i++) if (has(i) && RK.ay[i] < best) { best = RK.ay[i]; fi = i; }
+    if (fi >= 0 && type !== 'volley') put('racketFinish', (W2(fi, S.sh)[1] - RK.ay[fi]) / BHimg, 0.5 * cover(c, fi) * Math.min(1, RK.sc[fi] + 0.2), fi);
+  } else {
+    let maxY = -1, mi = -1; for (let i = Math.max(lo, trophy); i < c; i++) if (has(i) && RK.ay[i] > maxY) { maxY = RK.ay[i]; mi = i; }
+    if (mi >= 0) put('serveDrop', (maxY - W2(mi, S.sh)[1]) / BHimg, 0.7 * Math.min(1, RK.sc[mi] + 0.3) * blurF * cover(trophy, c), mi);
+  }
+}

@@ -2,8 +2,8 @@
 // ideal zone with an arrow for the fix, plus an overlay drawn on the player's own video frame.
 // Drawn for a right-hander and mirrored for left-handers. Colours default to CSS variables
 // (light/dark); the summary image passes literal colours.
-import { rangeFor } from './analysis.js?v=4';
-import { fmtValue, fmtRange } from './coach.js?v=4';
+import { rangeFor } from './analysis.js?v=5';
+import { fmtValue, fmtRange } from './coach.js?v=5';
 
 const CSS = { ink: 'var(--text)', muted: 'var(--muted)', line: 'var(--line)', soft: 'var(--surface2)', ideal: 'var(--good)', you: 'var(--bad)', net: 'var(--info)', bg: 'var(--surface)' };
 export const LIGHT = { ink: '#13201a', muted: '#5a6a61', line: '#cfd8cc', soft: '#eef3ec', ideal: '#1f8a4c', you: '#c2412d', net: '#2563eb', bg: '#ffffff' };
@@ -28,7 +28,7 @@ function ctxFor(W, H, hand, P, lang) {
   const anc = (a) => (!L ? a : a === 'start' ? 'end' : a === 'end' ? 'start' : a);
   const o = [];
   const api = {
-    W, H, X, P, lang, o,
+    W, H, X, P, lang, o, L,
     line: (x1, y1, x2, y2, c, w = 2, dash = '', extra = '') => o.push(`<line x1="${r1(X(x1))}" y1="${r1(y1)}" x2="${r1(X(x2))}" y2="${r1(y2)}" stroke="${c}" stroke-width="${w}" stroke-linecap="round"${dash ? ` stroke-dasharray="${dash}"` : ''} ${extra}/>`),
     poly: (pts, c, w = 2, fill = 'none', dash = '', op = 1) => o.push(`<polyline points="${pts.map(([x, y]) => `${r1(X(x))},${r1(y)}`).join(' ')}" fill="${fill}" stroke="${c}" stroke-width="${w}" stroke-linejoin="round" stroke-linecap="round"${dash ? ` stroke-dasharray="${dash}"` : ''} opacity="${op}"/>`),
     circle: (x, y, r, stroke, fill = 'none', w = 2, dash = '', op = 1) => o.push(`<circle cx="${r1(X(x))}" cy="${r1(y)}" r="${r1(r)}" stroke="${stroke}" fill="${fill}" stroke-width="${w}"${dash ? ` stroke-dasharray="${dash}"` : ''} opacity="${op}"/>`),
@@ -340,6 +340,106 @@ function gauge(g, m, type, good, key) {
 }
 for (const k of ['legDrive', 'offArm', 'compact', 'recovery', 'wristSpeed']) D[k] = (g, m, type, good) => gauge(g, m, type, good, k);
 
+
+// ---------- racket diagrams ----------
+const RK_COL = '#0891b2';
+function racketShape(g, x, y, ang, len, c, w = 3, dash = '', op = 1) {
+  // racket from the hand (x,y) along screen angle ang (deg, 0 = +x, y down); head oval at the far end
+  const t = ang * Math.PI / 180, ux = Math.cos(t), uy = Math.sin(t);
+  const nx = x + ux * len * 0.45, ny = y + uy * len * 0.45, hx = x + ux * len * 0.72, hy = y + uy * len * 0.72;
+  g.line(x, y, nx, ny, c, w, dash);
+  const rx = len * 0.28, ry = len * 0.19;
+  const X = g.X(hx); const a = g.L ? 180 - ang : ang;
+  g.o.push(`<ellipse cx="${r1(X)}" cy="${r1(hy)}" rx="${r1(rx)}" ry="${r1(ry)}" transform="rotate(${r1(a)} ${r1(X)} ${r1(hy)})" fill="none" stroke="${c}" stroke-width="${w}"${dash ? ` stroke-dasharray="${dash}"` : ''} opacity="${op}"/>`);
+  return [hx, hy];
+}
+D.racketFace = (g, m, type, good) => {
+  const { P, lang } = g; const you = good ? P.ideal : P.you;
+  const r = rangeFor(type, 'racketFace') || [-15, 8];
+  const cx = 150, cy = 110, L = 70;
+  g.line(20, 182, g.W - 20, 182, P.line, 2); g.text(g.W - 22, 176, tx('net', lang) + ' →', P.net, 10, 'end');
+  // ball on the net side of the strings
+  g.circle(cx + 26, cy, 11, '#a3a30a', '#d9f24a', 1.5);
+  // face seen from the side: a line; vertical = square, top leaning toward the net = closed (negative)
+  const seg = (deg, c, w, dash = '') => { const t = deg * Math.PI / 180; g.line(cx - Math.sin(t) * L, cy + Math.cos(t) * L, cx + Math.sin(t) * L, cy - Math.cos(t) * L, c, w, dash); };
+  g.sector(cx, cy, L + 6, -90 - r[1], -90 - r[0], P.ideal, 0.22); g.sector(cx, cy, L + 6, 90 - r[1], 90 - r[0], P.ideal, 0.22);
+  seg(-(r[0] + r[1]) / 2, P.ideal, 2.5, '6 4');
+  seg(-clamp(m.v, -70, 70), you, 6);
+  g.text(cx - 50, cy - L - 2, lang === 'zh' ? '開放' : 'open', P.muted, 10); g.text(cx + 50, cy - L - 2, lang === 'zh' ? '關閉' : 'closed', P.muted, 10);
+  header(g, fmtValue(m.unit ? m : { ...m, unit: 'face' }, lang, type), fmtRange('racketFace', type, lang), good);
+};
+D.swingPath = (g, m, type, good) => {
+  const { P, lang } = g; const you = good ? P.ideal : P.you;
+  const r = rangeFor(type, 'swingPath') || [8, 45]; const cx = 150, cy = 120, L = 110;
+  g.line(20, cy, g.W - 20, cy, P.line, 1, '4 4'); g.text(g.W - 22, cy - 6, tx('net', lang) + ' →', P.net, 10, 'end');
+  g.sector(cx, cy, L, -r[1], -r[0], P.ideal, 0.2); g.sector(cx, cy, L, 180 - r[1], 180 - r[0], P.ideal, 0.2);
+  g.circle(cx, cy, 10, '#a3a30a', '#d9f24a', 1.5);
+  const t = -clamp(m.v, -70, 80) * Math.PI / 180;
+  g.arrow(cx - Math.cos(t) * L, cy - Math.sin(t) * L, cx + Math.cos(t) * L, cy + Math.sin(t) * L, you, 4);
+  header(g, `${Math.round(m.v)}°`, fmtRange('swingPath', type, lang), good);
+  g.text(g.W - 12, 34, lang === 'zh' ? '由下往上 ↗ 為正' : 'low-to-high is positive', P.muted, 10, 'end');
+};
+D.racketDrop = (g, m, type, good) => {
+  const { P, lang } = g; const you = good ? P.ideal : P.you;
+  const r = rangeFor(type, 'racketDrop') || [0.06, 0.4]; const s = 220, y0 = 80, x0 = 40, x1 = 260, xc = 205;
+  g.circle(xc, y0, 9, '#a3a30a', '#d9f24a', 1.5); g.line(20, y0, g.W - 20, y0, P.line, 1, '3 3');
+  g.rect(120, y0 + r[0] * s, 60, (Math.min(r[1], 0.5) - r[0]) * s, P.ideal, P.ideal, 6, 0.22);
+  const dy = clamp(m.v, -0.1, 0.5) * s;
+  g.path(`M${g.X(x0)},${y0 - 30} Q${g.X(150)},${y0 + dy * 2 - 10} ${g.X(xc)},${y0} T${g.X(x1)},${y0 - 60}`, you, 'none', 4);
+  header(g, fmtValue({ ...m, unit: 'pctBH' }, lang, type), fmtRange('racketDrop', type, lang), good);
+};
+D.racketHeadHeight = (g, m, type, good) => {
+  const { P, lang } = g; const you = good ? P.ideal : P.you;
+  const r = rangeFor(type, 'racketHeadHeight') || [-0.15, 0.15]; const s = 260, wx = 120, wy = 110;
+  g.line(40, wy + 10, wx, wy, P.muted, 5); g.circle(wx, wy, 5, P.ink, P.ink);
+  g.rect(190, wy - Math.min(r[1], 0.5) * s, 70, (Math.min(r[1], 0.5) - r[0]) * s, P.ideal, P.ideal, 8, 0.22);
+  const hy = wy - clamp(m.v, -0.3, 0.55) * s; const ang = Math.atan2(hy - wy, 105) * 180 / Math.PI;
+  racketShape(g, wx, wy, ang, 150, you, 4);
+  header(g, fmtValue({ ...m, unit: 'pctBH' }, lang, type), fmtRange('racketHeadHeight', type, lang), good);
+};
+D.racketLag = (g, m, type, good) => {
+  const { P, lang } = g; const you = good ? P.ideal : P.you;
+  const r = rangeFor(type, 'racketLag') || [15, 80]; const ex = 60, ey = 110, wx = 140, wy = 110;
+  g.line(ex, ey, wx, wy, P.muted, 6); g.circle(wx, wy, 5, P.ink, P.ink);
+  g.sector(wx, wy, 120, 180 - r[1], 180 - r[0], P.ideal, 0.18);
+  racketShape(g, wx, wy, -((r[0] + r[1]) / 2) + 0, 130, P.ideal, 2.5, '6 4', 0.9);
+  racketShape(g, wx, wy, -clamp(m.v, 0, 179), 130, you, 4);
+  header(g, `${Math.round(m.v)}°`, fmtRange('racketLag', type, lang), good);
+};
+D.takeBack = (g, m, type, good) => {
+  const { P, lang } = g; const you = good ? P.ideal : P.you;
+  const r = rangeFor(type, 'takeBack') || [-10, 100];
+  const f = sideFigure(g, 170, 190, 150, P.ink, 3, 0.9); const wx = f.hip[0] - 40, wy = f.hipY - 25;
+  g.line(f.sh[0], f.sh[1], wx, wy, P.muted, 3);
+  g.sector(wx, wy, 90, 180, 180 + Math.min(r[1], 100), P.ideal, 0.18);
+  racketShape(g, wx, wy, 180 + clamp(m.v, -90, 120), 110, you, 4);
+  g.text(30, 30, lang === 'zh' ? '↑ 天空' : '↑ sky', P.muted, 10, 'start'); g.text(14, wy + 4, lang === 'zh' ? '← 後方' : '← back', P.muted, 10, 'start');
+  header(g, `${Math.round(m.v)}°`, fmtRange('takeBack', type, lang), good);
+};
+D.racketFinish = (g, m, type, good) => {
+  const { P, lang } = g; const you = good ? P.ideal : P.you;
+  const r = rangeFor(type, 'racketFinish') || [-0.05, 0.6];
+  const f = backFigure(g, 130, 190, 150, P.ink, 3); const s = 150;
+  g.rect(f.lSh[0] - 50, f.shY - Math.min(r[1], 0.6) * s, 90, (Math.min(r[1], 0.6) - r[0]) * s, P.ideal, P.ideal, 8, 0.22);
+  const hy = f.shY - clamp(m.v, -0.4, 0.7) * s; const hand = [f.lSh[0] + 4, f.shY - 6];
+  g.line(f.rSh[0], f.rSh[1], hand[0], hand[1], P.muted, 3);
+  racketShape(g, hand[0], hand[1], Math.atan2(hy - hand[1], -40) * 180 / Math.PI, 110, you, 4);
+  header(g, fmtValue({ ...m, unit: 'pctBH' }, lang, type), fmtRange('racketFinish', type, lang), good);
+};
+D.serveDrop = (g, m, type, good) => {
+  const { P, lang } = g; const you = good ? P.ideal : P.you;
+  const r = rangeFor(type, 'serveDrop') || [0.05, 0.45];
+  const f = sideFigure(g, 150, 192, 160, P.ink, 3, 0.9); const s = 160;
+  const el = [f.sh[0] - 6, f.sh[1] - 34];
+  g.line(f.sh[0], f.sh[1], el[0], el[1], P.muted, 3);
+  g.rect(f.sh[0] - 70, f.sh[1] + r[0] * s, 50, (Math.min(r[1], 0.6) - r[0]) * s, P.ideal, P.ideal, 8, 0.22);
+  const hy = f.sh[1] + clamp(m.v, -0.1, 0.6) * s, hx = f.sh[0] - 45;
+  g.line(el[0], el[1], f.sh[0] - 22, f.sh[1] - 10, P.muted, 3);
+  racketShape(g, f.sh[0] - 22, f.sh[1] - 10, Math.atan2(hy - (f.sh[1] - 10), hx - (f.sh[0] - 22)) * 180 / Math.PI, 100, you, 4);
+  header(g, fmtValue({ ...m, unit: 'pctBH' }, lang, type), fmtRange('serveDrop', type, lang), good);
+};
+
+const METRIC_RACKET = new Set(['racketFace', 'racketHeadHeight', 'racketDrop', 'swingPath', 'racketLag', 'takeBack', 'racketFinish', 'serveDrop']);
 export function hasDiagram(key) { return !!D[key]; }
 // m: metric {key, v, ...}; opts: {hand, lang, good, palette}
 export function diagramSvg(m, type, { hand = 'R', lang = 'zh', good = false, palette } = {}) {
@@ -352,7 +452,7 @@ export function diagramSvg(m, type, { hand = 'R', lang = 'zh', good = false, pal
 
 // ---------- overlay on the player's own frame ----------
 // pose: Float32Array(99) normalized (x,y,vis); aspect = W/H; F: world forward [x,y,z]; BHimg in frame-height units
-export function overlaySvg(m, type, { pose, aspect, F, BHimg, hand = 'R', lang = 'zh', good = false }) {
+export function overlaySvg(m, type, { pose, aspect, F, BHimg, hand = 'R', lang = 'zh', good = false, rk = null }) {
   if (!pose) return '';
   const W = aspect * 100, H = 100;
   const P = (k) => [pose[k * 3] * W, pose[k * 3 + 1] * H];
@@ -381,7 +481,29 @@ export function overlaySvg(m, type, { pose, aspect, F, BHimg, hand = 'R', lang =
   const level = (v) => hipM[1] - v * (hipM[1] - P(R('sh'))[1]);
   let note = '';
   const k = m.key;
-  if (k === 'contactFront' || k === 'contactHeight') {
+  // racket (if detected near this moment): shaft from the hand to the head
+  const RKC = '#22d3ee';
+  let head = null;
+  if (rk && Number.isFinite(rk.hx) && Number.isFinite(rk.hy)) {
+    head = [rk.hx * W, rk.hy * H];
+    line(wr, head, 'rgba(0,0,0,.6)', sw * 3.4); line(wr, head, RKC, sw * 2);
+    o.push(`<circle cx="${r1(head[0])}" cy="${r1(head[1])}" r="${r1(bh * 0.045)}" fill="none" stroke="${RKC}" stroke-width="${r1(sw * 1.6)}"/>`);
+  }
+  if (METRIC_RACKET.has(k)) {
+    const unitOv = m.unit === 'pctBH' ? 'pctBH' : undefined;
+    let vs = ''; try { vs = `${fmtValue(m, lang, type)} → ${fmtRange(k, type, lang, unitOv)}`; } catch (e) { vs = ''; }
+    if (head && k === 'racketHeadHeight') {
+      const r = rangeFor(type, k) || [-0.15, 0.15];
+      zoneRect(head[0] - bh * 0.12, wr[1] - Math.min(r[1], 0.6) * bh, head[0] + bh * 0.12, wr[1] - r[0] * bh, false);
+      if (!good) arrow(head, [head[0], clamp(head[1], wr[1] - Math.min(r[1], 0.6) * bh + sw * 3, wr[1] - r[0] * bh - sw * 3)], you);
+    }
+    if (head && k === 'racketFace' && Number.isFinite(m.v)) {
+      const L2 = bh * 0.11, face = (deg, c, w, dash) => { const t = deg * Math.PI / 180; const dx = Math.sin(t) * L2 * fsg, dy = Math.cos(t) * L2; line([head[0] - dx, head[1] + dy], [head[0] + dx, head[1] - dy], c, w, dash); };
+      const r = rangeFor(type, k) || [-15, 8]; face(-(r[0] + r[1]) / 2, ideal, sw * 1.6, `${sw * 2} ${sw * 1.5}`); face(-m.v, you, sw * 2.6);
+    }
+    if (vs) label([clamp((head || wr)[0], bh * 0.4, W - bh * 0.4), Math.max(sw * 6, Math.min((head || wr)[1], wr[1]) - bh * 0.1)], vs, good ? ideal : '#fff');
+    if (!head) label([W / 2, H - 4], lang === 'zh' ? '這一刻沒偵測到球拍' : 'No racket found at this moment', '#fde68a');
+  } else if (k === 'contactFront' || k === 'contactHeight') {
     const r = rangeFor(type, 'contactFront') || [0.1, 0.5]; const rh = rangeFor(type, 'contactHeight') || [0.05, 1.05];
     const y0 = level(Math.min(rh[1], 1.2)), y1 = level(Math.max(rh[0], -0.3));
     let x0, x1, faded = false;

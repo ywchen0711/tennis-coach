@@ -2,7 +2,7 @@
 // The video is stepped frame by frame by seeking (requestVideoFrameCallback confirms the
 // new frame where the browser supports it). Each frame is drawn at reduced resolution and
 // only landmarks are kept, so memory stays low on phones.
-import { FilesetResolver, PoseLandmarker } from '../vendor/mediapipe/vision_bundle.js?v=4';
+import { FilesetResolver, PoseLandmarker, ObjectDetector } from '../vendor/mediapipe/vision_bundle.js?v=5';
 
 const BASE = new URL('..', import.meta.url).href;
 export const QUALITY = {
@@ -12,6 +12,67 @@ export const QUALITY = {
 };
 let fileset = null, current = null, currentKey = '', delegateUsed = '';
 let tsBase = 0; // VIDEO mode needs strictly increasing timestamps across runs
+
+// ---------- racket detector (COCO "tennis racket") ----------
+let racketDet = null, racketKey = '';
+async function getRacketDetector(quality) {
+  const key = quality === 'precise' ? 'lite2' : 'lite0';
+  if (racketDet && racketKey === key) return racketDet;
+  if (racketDet) { try { racketDet.close(); } catch (e) { /* ignore */ } racketDet = null; }
+  if (!fileset) fileset = await FilesetResolver.forVisionTasks(BASE + 'vendor/mediapipe/wasm');
+  const opts = (delegate) => ({ baseOptions: { modelAssetPath: BASE + `models/efficientdet_${key}.tflite`, delegate }, runningMode: 'VIDEO', scoreThreshold: 0.12, maxResults: 3, categoryAllowlist: ['tennis racket'] });
+  try { racketDet = await ObjectDetector.createFromOptions(fileset, opts('GPU')); } catch (e) { racketDet = await ObjectDetector.createFromOptions(fileset, opts('CPU')); }
+  racketKey = key;
+  return racketDet;
+}
+// Shape of the racket head inside a detection box: take the half of the box away from the
+// nearest wrist, weight pixels by edge strength and fit an ellipse by second moments.
+// ang = major-axis angle (deg, image, 0 = horizontal), ratio = minor/major (0 edge-on .. ~0.75 face-on)
+function headShape(ctx, bx, by, bw, bh, wx, wy) {
+  const long = bw >= bh;
+  let x0 = bx, y0 = by, w = bw, h = bh;
+  if (long) { w = bw / 2; if (Math.abs(wx - bx) < Math.abs(wx - (bx + bw))) x0 = bx + bw / 2; }
+  else { h = bh / 2; if (Math.abs(wy - by) < Math.abs(wy - (by + bh))) y0 = by + bh / 2; }
+  x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0)); w = Math.max(4, Math.min(Math.floor(w), ctx.canvas.width - x0)); h = Math.max(4, Math.min(Math.floor(h), ctx.canvas.height - y0));
+  if (w < 6 || h < 6) return null;
+  const d = ctx.getImageData(x0, y0, w, h).data;
+  const g = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) g[i] = d[i * 4] * 0.3 + d[i * 4 + 1] * 0.59 + d[i * 4 + 2] * 0.11;
+  const mags = []; const pts = [];
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const gx = g[y * w + x + 1] - g[y * w + x - 1], gy = g[(y + 1) * w + x] - g[(y - 1) * w + x];
+    const m = Math.hypot(gx, gy); mags.push(m); pts.push([x, y, m]);
+  }
+  if (pts.length < 20) return null;
+  const sorted = mags.slice().sort((a, b) => a - b); const thr = sorted[Math.floor(sorted.length * 0.75)];
+  let sw = 0, mx = 0, my = 0;
+  for (const [x, y, m] of pts) if (m > thr) { sw += m; mx += x * m; my += y * m; }
+  if (sw <= 0) return null;
+  mx /= sw; my /= sw;
+  let cxx = 0, cyy = 0, cxy = 0;
+  for (const [x, y, m] of pts) if (m > thr) { cxx += m * (x - mx) ** 2; cyy += m * (y - my) ** 2; cxy += m * (x - mx) * (y - my); }
+  cxx /= sw; cyy /= sw; cxy /= sw;
+  const tr = cxx + cyy, det = cxx * cyy - cxy * cxy, disc = Math.sqrt(Math.max(0, tr * tr / 4 - det));
+  const l1 = tr / 2 + disc, l2 = Math.max(0, tr / 2 - disc);
+  const ang = 0.5 * Math.atan2(2 * cxy, cxx - cyy) * 180 / Math.PI;
+  // sharpness (blur): mean gradient of the strong edges relative to contrast
+  return { ang, ratio: Math.sqrt(l2 / Math.max(1e-6, l1)), cx: x0 + mx, cy: y0 + my, sharp: thr };
+}
+async function detectRackets(det, canvas, ctx, ts, poses) {
+  const res = det.detectForVideo(canvas, ts);
+  const W = canvas.width, H = canvas.height; const out = [];
+  const wrists = []; for (const p of poses) for (const k of [15, 16]) wrists.push([p.img[k * 3] * W, p.img[k * 3 + 1] * H]);
+  for (const d of (res.detections || []).slice(0, 3)) {
+    const b = d.boundingBox; if (!b) continue;
+    const bcx = b.originX + b.width / 2, bcy = b.originY + b.height / 2;
+    let wx = bcx, wy = bcy + b.height, best = 1e9;
+    for (const [x, y] of wrists) { const dd = Math.hypot(x - bcx, y - bcy); if (dd < best) { best = dd; wx = x; wy = y; } }
+    let shape = null; try { shape = headShape(ctx, b.originX, b.originY, b.width, b.height, wx, wy); } catch (e) { shape = null; }
+    out.push({ x: b.originX / W, y: b.originY / H, w: b.width / W, h: b.height / H, s: d.categories && d.categories[0] ? d.categories[0].score : 0,
+      ang: shape ? shape.ang : NaN, ratio: shape ? shape.ratio : NaN, hx: shape ? shape.cx / W : NaN, hy: shape ? shape.cy / H : NaN, sharp: shape ? shape.sharp : 0 });
+  }
+  return out;
+}
 
 export function suggestQuality() {
   const cores = navigator.hardwareConcurrency || 4, mem = navigator.deviceMemory || 4;
@@ -86,14 +147,15 @@ function copyPoses(res) {
 }
 
 // Runs pose tracking over [start, end]. Returns {frames, aspect, msPerFrame}.
-export async function trackClip(video, { start, end, fps, quality, onProgress, onPreview, signal }) {
+export async function trackClip(video, { start, end, fps, quality, racket = true, onProgress, onPreview, signal }) {
   const q = QUALITY[quality] || QUALITY.balanced;
   let lm = await getLandmarker(quality);
   const W0 = video.videoWidth, H0 = video.videoHeight;
   const sc = Math.min(1, q.maxSide / Math.max(W0, H0));
   const cw = Math.max(2, Math.round(W0 * sc)), ch = Math.max(2, Math.round(H0 * sc));
   const canvas = document.createElement('canvas'); canvas.width = cw; canvas.height = ch;
-  const ctx = canvas.getContext('2d', { willReadFrequently: false });
+  const ctx = canvas.getContext('2d', { willReadFrequently: !!racket });
+  let rdet = null; if (racket) { try { rdet = await getRacketDetector(quality); } catch (e) { rdet = null; } }
   const vfps = fps || 30;
   const sfps = Math.min(vfps, q.maxFps);
   const step = 1 / sfps;
@@ -117,10 +179,12 @@ export async function trackClip(video, { start, end, fps, quality, onProgress, o
       else throw e;
     }
     const poses = copyPoses(res);
-    frames.push({ t: times[i], poses });
+    let rackets;
+    if (rdet) { try { rackets = await detectRackets(rdet, canvas, ctx, Math.round(tsBase + times[i] * 1000 + i), poses); } catch (e) { rackets = []; } }
+    frames.push(rackets ? { t: times[i], poses, rackets } : { t: times[i], poses });
     const el = performance.now() - t0;
     if (onProgress) onProgress({ done: i + 1, total: times.length, msPerFrame: el / (i + 1), etaMs: el / (i + 1) * (times.length - i - 1) });
-    if (onPreview && (i % 3 === 0 || i === times.length - 1)) onPreview(canvas, poses);
+    if (onPreview && (i % 3 === 0 || i === times.length - 1)) onPreview(canvas, poses, rackets);
   }
   tsBase += Math.round((end + 10) * 1000) + times.length;
   return { frames, aspect: W0 / H0, sampleFps: sfps, msPerFrame: (performance.now() - t0) / Math.max(1, times.length), width: W0, height: H0 };

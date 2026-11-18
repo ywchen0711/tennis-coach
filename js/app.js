@@ -1,13 +1,13 @@
 // Swing Coach - UI controller.
-import { t, L, setLang, getLang, applyI18n, fmtDuration, fmtTime } from './i18n.js?v=4';
-import { probeVideo } from './mp4.js?v=4';
-import { getLandmarker, trackClip, scanMotion, suggestTrim, captureFrame, seekTo, QUALITY, suggestQuality, delegateName } from './pose.js?v=4';
-import { selectTrack, buildTrack, analyze, poseAt, angleSeries, rankIssues, rankStrengths, AREAS, STROKES, CONF_MIN, sideIdx } from './analysis.js?v=4';
-import { STROKE_NAMES, STROKE_SHORT, VIEW_NAMES, VIEW_NOTES, AREA_NAMES, PHASE_NAMES, METRIC_NAMES, metricText, fmtValue, fmtRange, CONF_LABEL, areaLabel, contactVerdicts } from './coach.js?v=4';
-import { lineChart, drawSkeleton, drawTrail, cssVar, fitCanvas } from './charts.js?v=4';
-import { saveAnalysis, listAnalyses, deleteAnalysis, clearAnalyses } from './store.js?v=4';
-import { renderSummary } from './summary.js?v=4';
-import { diagramSvg, overlaySvg, skeletonSvg, contactTopSvg, contactSideSvg, serveReachSvg } from './diagrams.js?v=4';
+import { t, L, setLang, getLang, applyI18n, fmtDuration, fmtTime } from './i18n.js?v=5';
+import { probeVideo } from './mp4.js?v=5';
+import { getLandmarker, trackClip, scanMotion, suggestTrim, captureFrame, seekTo, QUALITY, suggestQuality, delegateName } from './pose.js?v=5';
+import { selectTrack, buildTrack, analyze, poseAt, frameIndexAt, angleSeries, rankIssues, rankStrengths, AREAS, STROKES, CONF_MIN, sideIdx } from './analysis.js?v=5';
+import { STROKE_NAMES, STROKE_SHORT, VIEW_NAMES, VIEW_NOTES, AREA_NAMES, PHASE_NAMES, METRIC_NAMES, metricText, fmtValue, fmtRange, CONF_LABEL, areaLabel, contactVerdicts, racketVerdicts, RACKET_KEYS } from './coach.js?v=5';
+import { lineChart, drawSkeleton, drawTrail, cssVar, fitCanvas } from './charts.js?v=5';
+import { saveAnalysis, listAnalyses, deleteAnalysis, clearAnalyses } from './store.js?v=5';
+import { renderSummary } from './summary.js?v=5';
+import { diagramSvg, overlaySvg, skeletonSvg, contactTopSvg, contactSideSvg, serveReachSvg } from './diagrams.js?v=5';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -110,7 +110,7 @@ async function loadFile(file) {
   const probe = await probeVideo(file);
   state.fps = probe && probe.fps > 5 && probe.fps < 1000 ? probe.fps : 30;
   state.trim = [0, Math.min(state.duration, 30)];
-  setSeg('#segQuality', state.quality); setSeg('#segHand', state.hand); setSeg('#segSlow', state.slow);
+  setSeg('#segQuality', state.quality); setSeg('#segHand', state.hand); setSeg('#segSlow', state.slow); setSeg('#segRacket', racketOn() ? '1' : '0');
   drawTrim(); updateEstimate();
   // motion scan for the trim suggestion
   const ac = new AbortController(); state.scanAbort = ac;
@@ -133,6 +133,8 @@ function segListen(sel, fn) { $$(sel + ' button').forEach((b) => b.addEventListe
 segListen('#segQuality', (v) => { state.quality = v; store.set('sc-quality', v); updateEstimate(); });
 segListen('#segHand', (v) => { state.hand = v; });
 segListen('#segSlow', (v) => { state.slow = v; });
+segListen('#segRacket', (v) => { store.set('sc-racket', v); updateEstimate(); });
+const racketOn = () => store.get('sc-racket') !== '0';
 
 function drawTrim() {
   const strip = $('#strip'), c = $('#motionCanvas');
@@ -190,8 +192,8 @@ function updateEstimate() {
   if (!state.duration) { $('#estimate').textContent = ''; return; }
   const q = QUALITY[state.quality];
   const n = Math.round((state.trim[1] - state.trim[0]) * Math.min(state.fps, q.maxFps));
-  const measured = parseFloat(store.get('sc-ms-' + state.quality));
-  const ms = Number.isFinite(measured) ? measured : ({ fast: 45, balanced: 70, precise: 170 })[state.quality];
+  const measured = parseFloat(store.get('sc-ms-' + state.quality + (racketOn() ? '-r' : '')));
+  const ms = Number.isFinite(measured) ? measured : ({ fast: 45, balanced: 70, precise: 170 })[state.quality] * (racketOn() ? 1.45 : 1);
   let s = t('estimate', { n, t: fmtDuration(n * ms) });
   if (n * ms > 120000) s += ' ' + t('longWarn');
   $('#estimate').textContent = s + ` · ${Math.round(state.fps)} fps`;
@@ -214,20 +216,21 @@ async function runAnalysis() {
     try { await getLandmarker(state.quality); } catch (e) { console.warn(e); toast(t('modelErr'), 5000); show('prepare'); return; }
     $('#procStatus').textContent = t('delegate', { d: delegateName() });
     const res = await trackClip(work, {
-      start: state.trim[0], end: state.trim[1], fps: state.fps, quality: state.quality, signal: ac.signal,
+      start: state.trim[0], end: state.trim[1], fps: state.fps, quality: state.quality, racket: racketOn(), signal: ac.signal,
       onProgress: (p) => {
         $('#progFill').style.width = (p.done / p.total * 100).toFixed(1) + '%';
         $('#procFrames').textContent = t('frames', { a: p.done, b: p.total });
         if (p.done > 4) $('#procEta').textContent = t('eta', { t: fmtDuration(p.etaMs) });
       },
-      onPreview: (canvas, poses) => {
+      onPreview: (canvas, poses, rackets) => {
         if (pc.width !== canvas.width) { pc.width = canvas.width; pc.height = canvas.height; }
         pctx.drawImage(canvas, 0, 0);
         const rect = { x: 0, y: 0, w: pc.width, h: pc.height };
         poses.forEach((p, i) => drawSkeleton(pctx, p.img, rect, 'R', { alpha: i ? 0.5 : 1 }));
+        for (const b of rackets || []) { pctx.strokeStyle = '#22d3ee'; pctx.lineWidth = 2; pctx.strokeRect(b.x * pc.width, b.y * pc.height, b.w * pc.width, b.h * pc.height); }
       },
     });
-    store.set('sc-ms-' + state.quality, String(Math.round(res.msPerFrame + 5)));
+    store.set('sc-ms-' + state.quality + (racketOn() ? '-r' : ''), String(Math.round(res.msPerFrame + 5)));
     state.frames = res.frames; state.aspect = res.aspect; state.sampleFps = res.sampleFps;
     state.multi = res.frames.filter((f) => f.poses.length > 1).length / Math.max(1, res.frames.length);
     state.anchor = null; state.overrides = {}; state.sel = 0; state.fromHistory = false;
@@ -344,17 +347,22 @@ function visualHtml(m, type, sw, good = false) {
   if (!state.fromHistory && state.track && Number.isFinite(m.time)) {
     const pose = poseAt(state.track, m.time);
     if (pose) {
-      const ov = overlaySvg(m, type, { pose, aspect: state.aspect, F: sw && sw.F, BHimg: state.result.BHimg, hand, lang: lang(), good });
+      const ov = overlaySvg(m, type, { pose, aspect: state.aspect, F: sw && sw.F, BHimg: state.result.BHimg, hand, lang: lang(), good, rk: rkAt(m.time) });
       ph = `<figure class="ph-fig" data-zoom style="aspect-ratio:${state.aspect};--ar:${state.aspect}"><img data-ft="${m.time}" alt="">${ov}<figcaption>${esc(fmtTime(m.time))}</figcaption></figure>`;
     }
   }
   if (!dg && !ph) return '';
   return `<div class="dg-row">${dg ? `<figure class="dg-fig" data-zoom>${dg}</figure>` : ''}${ph}</div>`;
 }
+function rkAt(time) {
+  const R = state.result && state.result.racket; if (!R || !state.track) return null;
+  let i = frameIndexAt(state.track, time); if (i > 0 && Math.abs(state.track.t[i - 1] - time) < Math.abs(state.track.t[i] - time)) i--;
+  return R.ok[i] && Math.abs(state.track.t[i] - time) < 0.1 ? { hx: R.hx[i], hy: R.hy[i] } : null;
+}
 function photoHtml(m, type, sw, good = false) {
   if (state.fromHistory || !state.track || !Number.isFinite(m.time)) return '';
   const pose = poseAt(state.track, m.time); if (!pose) return '';
-  const ov = overlaySvg(m, type, { pose, aspect: state.aspect, F: sw && sw.F, BHimg: state.result.BHimg, hand: state.result.hand, lang: lang(), good });
+  const ov = overlaySvg(m, type, { pose, aspect: state.aspect, F: sw && sw.F, BHimg: state.result.BHimg, hand: state.result.hand, lang: lang(), good, rk: rkAt(m.time) });
   return `<figure class="ph-fig" data-zoom style="aspect-ratio:${state.aspect};--ar:${state.aspect}"><img data-ft="${m.time}" alt="">${ov}<figcaption>${esc(fmtTime(m.time))}</figcaption></figure>`;
 }
 // always-visible contact-point card: all swings on one map, the player's frame, verdicts in cm
@@ -388,6 +396,32 @@ function contactCardHtml(selSw) {
       <label class="hgt">${esc(t('playerHeight'))} <input type="number" class="heightIn" min="100" max="230" step="1" inputmode="numeric" value="${playerHeight()}"> cm</label></div>
     <p class="note">${esc(t('cmNote'))}</p></div>`;
 }
+function racketCardHtml(selSw) {
+  const r = state.result; if (!r.swings.length) return '';
+  const R = r.racket;
+  const head = `<h3>🎾 ${esc(t('racketTitle'))}${selSw ? ` · #${selSw.index} ${esc(L(STROKE_SHORT[selSw.type]))}` : ''}</h3>`;
+  if (!R && !state.fromHistory) return `<div class="card racket-card">${head}<p class="note">${esc(t('racketOff'))}</p></div>`;
+  const list = selSw ? [selSw] : r.swings;
+  const has = list.some((s) => RACKET_KEYS.some((k) => s.metrics[k]));
+  if (!has) return `<div class="card racket-card">${head}<p class="note">${esc(t('noRacket'))}</p>${R ? `<p class="note">${esc(t('racketRate', { p: Math.round(R.rate * 100) }))}</p>` : ''}</div>`;
+  const verd = racketVerdicts(list, lang(), !!selSw);
+  const opt = { hand: r.hand, lang: lang() };
+  // diagrams: face and path of the selected swing (or the first swing that has them)
+  const pick = (k) => { const s = list.find((x) => x.metrics[k] && x.metrics[k].conf >= CONF_MIN); return s ? { s, m: s.metrics[k] } : null; }; // only reliable values get a diagram
+  const figs = [];
+  for (const k of ['racketFace', 'swingPath', 'racketHeadHeight', 'serveDrop']) {
+    const p = pick(k); if (!p || figs.length >= 2) continue;
+    const dg = diagramSvg(p.m, p.s.type, { ...opt, good: !(p.m.score < 0.75) });
+    if (dg) figs.push(`<figure class="dg-fig${p.m.conf < CONF_MIN ? ' faded' : ''}" data-zoom>${dg}<figcaption class="dg-cap">${esc(L(METRIC_NAMES[k]))} · #${p.s.index}${p.m.conf < CONF_MIN ? ' · ⚠' : ''}</figcaption></figure>`);
+  }
+  const ps = selSw || list.find((s) => s.metrics.racketHeadHeight) || list[0];
+  const pm = [ps.metrics.racketFace, ps.metrics.racketHeadHeight].find((m) => m && m.conf >= CONF_MIN) || { key: '_racket', v: 0, time: ps.phases.contact };
+  const photo = photoHtml(pm, ps.type, ps, !(pm.score < 0.75));
+  return `<div class="card racket-card">${head}
+    <ul class="verdicts">${verd.map((v) => `<li class="${v.ok ? 'ok' : v.lowConf ? 'lc' : 'fix'}">${esc(v.text)}</li>`).join('')}</ul>
+    <div class="dg-row">${figs.join('')}${photo}</div>
+    <p class="note">${R ? esc(t('racketRate', { p: Math.round(R.rate * 100) })) + ' · ' : ''}${esc(t('racketHonest'))}</p></div>`;
+}
 function issueCard(i, m, type, extra = '', mFull = null, sw = null) {
   const txt = metricText(m.key, type); const d = txt && txt[m.dir];
   const unitOv = m.unitOverride || (m.unit === 'pctBH' ? 'pctBH' : undefined);
@@ -418,6 +452,7 @@ function renderCoach() {
     const types = Object.entries(r.overall.byType).map(([k, n]) => `${L(STROKE_NAMES[k])} ×${n}`).join(' · ');
     h.push(`<div class="card"><div class="sum-line"><span class="big">${esc(t('swingsFound', { n: r.swings.length }))}</span><span class="muted">${esc(types)}</span></div><p class="note" style="margin-top:6px">${esc(L(VIEW_NOTES[r.view.key]))}</p></div>`);
     h.push(contactCardHtml(null));
+    h.push(racketCardHtml(null));
     h.push(areasHtml(r.overall.areas));
     h.push(`<h3 style="margin:6px 2px 0">${esc(t('topIssues'))}</h3>`);
     if (!r.overall.issues.length) h.push(`<div class="card"><p>${esc(t('noIssues'))}</p></div>`);
@@ -431,6 +466,7 @@ function renderCoach() {
   } else {
     h.push(`<div class="card"><div class="type-pick"><b>${esc(t('strokeType'))}</b><select id="typeSel" ${state.fromHistory ? 'disabled' : ''}>${STROKES.map((k) => `<option value="${k}" ${k === s.type ? 'selected' : ''}>${esc(L(STROKE_NAMES[k]))}</option>`).join('')}</select><span class="note">${esc(t('strokeFix'))}</span></div></div>`);
     h.push(contactCardHtml(s));
+    h.push(racketCardHtml(s));
     if (!state.fromHistory) h.push(keyframesHtml(s));
     h.push(areasHtml(s.areas));
     const issues = rankIssues(s, 3);
@@ -469,7 +505,7 @@ function consistencyHtml() {
     return `<div class="cons-row"><span>${esc(name)} <span class="muted">${esc(sd)}</span></span><span style="color:${scoreColor(row.score)};font-weight:800">${esc(lbl)}</span></div>`;
   }).join('')}</div>`).join('')}</div>`;
 }
-const METRIC_ORDER = ['unitTurn', 'separation', 'offArm', 'compact', 'trophyElbow', 'trophyElbowHeight', 'tossArm', 'kneeBend', 'legDrive', 'baseWidth', 'contactFront', 'contactHeight', 'contactReach', 'elbowAngle', 'extension', 'chain', 'wristSpeed', 'headStable', 'trunkLean', 'finish', 'recovery'];
+const METRIC_ORDER = ['unitTurn', 'separation', 'offArm', 'compact', 'trophyElbow', 'trophyElbowHeight', 'tossArm', 'kneeBend', 'legDrive', 'baseWidth', 'contactFront', 'contactHeight', 'contactReach', 'elbowAngle', 'extension', 'chain', 'wristSpeed', 'headStable', 'trunkLean', 'finish', 'recovery', 'racketFace', 'racketHeadHeight', 'swingPath', 'racketDrop', 'racketLag', 'takeBack', 'racketFinish', 'serveDrop'];
 function cellVal(m, type) {
   let v = esc(fmtValue(m, lang(), type));
   if (m.key === 'wristSpeed' && Number.isFinite(m.rel)) v += `<br><span class="muted small">${esc(t('speedRel', { p: Math.round(m.rel * 100) }))}</span>`;
@@ -636,7 +672,18 @@ function drawOverlay() {
     const S = sideIdx(r.hand); const pts = [];
     for (let k = 12; k >= 0; k--) { const q = poseAt(state.track, tt - k * 0.03 * r.slowmo); if (q) pts.push([q[S.wr * 3], q[S.wr * 3 + 1]]); }
     drawTrail(ctx, pts, picRect);
+    if (r.racket) {
+      const rp = []; for (let k = 12; k >= 0; k--) { const q = rkAt(tt - k * 0.03 * r.slowmo); if (q) rp.push([q.hx, q.hy]); }
+      drawTrail(ctx, rp, picRect, '#22d3ee');
+    }
     drawSkeleton(ctx, p, picRect, r.hand);
+    const rq = r.racket && rkAt(tt);
+    if (rq) {
+      const w = [p[S.wr * 3], p[S.wr * 3 + 1]]; const X = (x) => picRect.x + x * picRect.w, Y = (y) => picRect.y + y * picRect.h;
+      ctx.save(); ctx.lineCap = 'round'; ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(X(w[0]), Y(w[1])); ctx.lineTo(X(rq.hx), Y(rq.hy)); ctx.stroke();
+      ctx.strokeStyle = '#22d3ee'; ctx.lineWidth = 3.5; ctx.stroke();
+      ctx.beginPath(); ctx.arc(X(rq.hx), Y(rq.hy), Math.max(6, picRect.h * 0.03), 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+    }
   }
 }
 function nearestFrame(tt) { const fr = state.frames; let best = 0, bd = 1e9; for (let i = 0; i < fr.length; i++) { const d = Math.abs(fr[i].t - tt); if (d < bd) { bd = d; best = i; } } return best; }

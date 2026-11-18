@@ -58,6 +58,8 @@ const S = {
   ideal: ['建議範圍 {r}', 'Typical good range {r}'],
   inSwings: ['出現在第 {s} 拍', 'Seen in swing {s}'],
   contactTitle: ['擊球點分析', 'Contact point'], contactTop: ['俯視：擊球點在身體前方多遠', 'From above: how far in front you hit'], contactSide: ['側視：擊球高度', 'From the side: contact height'], serveReach: ['發球擊球點高度', 'Serve contact height'],
+  racketSet: ['拍子分析', 'Racket analysis'], on: ['開', 'On'], off: ['關', 'Off'], racketNote: ['偵測球拍位置與拍面方向（多花約 30–50% 時間）；拍子小或模糊時會偵測不到。', 'Finds the racket and its face (about 30-50% more time); small or blurred rackets may be missed.'],
+  racketTitle: ['拍面與拍頭', 'Racket'], racketRate: ['偵測到球拍的畫面 {p}%', 'Racket found in {p}% of frames'], noRacket: ['這段影片幾乎沒偵測到球拍（可能太小、太模糊或被擋住）。拍近一點、光線充足、60 fps 會更好。', 'The racket was rarely found in this clip (too small, blurred or hidden). Film closer, in good light, at 60 fps.'], racketOff: ['拍子分析已關閉（可在分析前的設定開啟）。', 'Racket analysis is off (turn it on in the settings before analysing).'], racketHonest: ['球拍是從影片畫面估計的：拍面角度需要側面拍攝與清楚的畫面才可靠，其餘數據也只是大概。', 'The racket is estimated from the video: the face angle needs a side view and a sharp picture to be reliable; the rest are approximate.'], racketAtContact: ['擊球瞬間', 'At contact'],
   playerHeight: ['你的身高', 'Your height'], cmNote: ['公分換算以這個身高估計', 'Centimetres are estimated from this height'], filmSide: ['想看準擊球點前後距離，請從側面或斜側面拍攝。', 'For an accurate front-back contact point, film from the side or a diagonal.'],
   keyframes: ['關鍵畫面', 'Key frames'],
   kfBack: ['引拍', 'Backswing'], kfTrophy: ['獎盃姿勢', 'Trophy'], kfContact: ['擊球', 'Contact'], kfFinish: ['收拍', 'Finish'],

@@ -12,6 +12,12 @@
 - Project: https://github.com/google-ai-edge/mediapipe
 - Model card (BlazePose GHUM 3D): https://storage.googleapis.com/mediapipe-assets/Model%20Card%20BlazePose%20GHUM%203D.pdf
 
+## Racket detector
+
+- `models/efficientdet_lite0.tflite`, `models/efficientdet_lite2.tflite` (float16, MediaPipe Object Detector,
+  COCO classes, used only for the "tennis racket" class), from `storage.googleapis.com/mediapipe-models/object_detector/...`.
+- Copyright Google LLC / TensorFlow authors. Licensed under the **Apache License 2.0**.
+
 ## Everything else
 
 All application code, coaching text (Chinese and English), icons and design are original to this project.

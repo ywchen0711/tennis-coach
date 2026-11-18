@@ -1,6 +1,6 @@
 // Coaching library (original wording, zh-TW + en) and helpers that turn metrics into
 // ranked advice. Ranges are coaching heuristics, not lab norms.
-import { rangeFor } from './analysis.js?v=4';
+import { rangeFor } from './analysis.js?v=5';
 
 const T = (zh, en) => ({ zh, en });
 
@@ -38,10 +38,84 @@ export const METRIC_NAMES = {
   elbowAngle: T('擊球時手肘角度', 'Elbow at contact'), extension: T('手臂伸展', 'Arm extension'), chain: T('發力順序（髖→肩→肘→腕）', 'Sequence (hips→shoulders→elbow→wrist)'),
   wristSpeed: T('手腕速度', 'Wrist speed'), headStable: T('頭部穩定', 'Head stability'), trunkLean: T('上身傾斜', 'Trunk lean'),
   finish: T('隨揮收拍', 'Follow-through finish'), recovery: T('擊球後回位', 'Recovery footwork'),
+  racketFace: T('擊球時拍面角度', 'Racket face at contact'), racketHeadHeight: T('擊球時拍頭高度', 'Racket head height at contact'), racketDrop: T('拍頭下沉（由下往上）', 'Racket drop (low to high)'),
+  swingPath: T('揮拍路徑角度', 'Swing path'), racketLag: T('拍頭延遲（lag）', 'Racket lag'), takeBack: T('引拍時拍頭方向', 'Racket at take-back'), racketFinish: T('收拍時拍頭位置', 'Racket at finish'), serveDrop: T('發球拍頭下垂（背後抓背）', 'Serve racket drop'),
+
 };
 
 // what/why/cue/drill per metric and direction; "key@type" overrides the generic text
 const C = {
+  racketFace: {
+    low: { why: T('擊球時拍面太關（往下蓋），球容易掛網。', 'The face is too closed at contact, so balls dive into the net.'),
+      cue: T('「拍面垂直地面去碰球」，靠由下往上的揮拍產生上旋，不是靠蓋拍。', '"Meet it with a vertical face" - topspin comes from the low-to-high swing, not from rolling over.'),
+      drill: T('定點餵球，擊球後停住檢查拍面是否接近垂直，15 球。', 'Fed balls: freeze after contact and check the face is close to vertical. 15 balls.') },
+    high: { why: T('擊球時拍面太開（朝上），球容易飛高出界或變成削球。', 'The face is too open at contact, so balls float long or turn into slices.'),
+      cue: T('「拍面對準網子上緣」，手腕保持固定。', '"Point the strings at the top of the net" and keep the wrist firm.'),
+      drill: T('對牆短距離平擊，專注拍面垂直，連續 20 球。', 'Short wall rally focusing on a vertical face, 20 in a row.') },
+    good: T('擊球時拍面角度穩定接近垂直。', 'Racket face close to square at contact.'),
+  },
+  'racketFace@volley': {
+    low: { why: T('截擊拍面太關，球會往下掛網。', 'A closed face on the volley sends the ball into the net.'),
+      cue: T('「拍面微開，像托住球」。', '"Slightly open face, like cradling the ball."'), drill: T('近距離截擊，讓球帶一點下旋過網，20 球。', 'Close volleys with a touch of underspin over the net. 20 balls.') },
+    high: { why: T('截擊拍面太開，球會飄高。', 'Too open on the volley - the ball floats up.'), cue: T('「拍面只微微打開」。', '"Only slightly open."'), drill: T('對牆截擊，目標打在網高附近，20 球。', 'Wall volleys aiming at net height. 20 balls.') },
+    good: T('截擊拍面微開、穩定。', 'Slightly open, steady volley face.'),
+  },
+  racketHeadHeight: {
+    low: { why: T('擊球時拍頭垂得比手低很多，拍面不穩、容易掛網。', 'The racket head hangs well below the hand at contact, making the face unstable.'),
+      cue: T('「用膝蓋降低，不是放下拍頭」。', '"Get low with the knees, don\'t drop the racket head."'), drill: T('低球練習，保持拍頭與手腕接近同高，10 球。', 'Low-ball practice keeping the head level with the wrist. 10 balls.') },
+    high: { why: T('擊球時拍頭比手高很多，揮拍變成由上往下、球容易下網。', 'The head is far above the hand at contact, turning the swing downward.'),
+      cue: T('「讓拍頭落到球的高度」。', '"Let the racket head come down to the ball."'), drill: T('空揮定格在擊球點，拍子接近水平，10 次。', 'Shadow swing and freeze at contact with the racket close to level. 10 reps.') },
+    good: T('擊球時拍頭高度合適。', 'Good racket head height at contact.'),
+  },
+  'racketHeadHeight@volley': {
+    low: { why: T('截擊拍頭低於手腕，拍面容易晃、擋不住球。', 'Racket head below the wrist on the volley makes the face wobble.'),
+      cue: T('「拍頭高過手腕，像拿著盾牌」。', '"Head above the wrist, like holding a shield."'), drill: T('靠網截擊，全程保持拍頭朝上，20 球。', 'Net volleys keeping the head up the whole time. 20 balls.') },
+    good: T('截擊拍頭保持在手腕上方。', 'Racket head stays above the wrist on volleys.'),
+  },
+  'racketHeadHeight@serve': {
+    low: { why: T('發球擊球時拍子沒有向上伸直，擊球點變低。', 'The racket is not reaching straight up at the serve contact, lowering it.'),
+      cue: T('「手臂和拍子連成一直線向上」。', '"Arm and racket in one straight line upward."'), drill: T('牆邊高點揮拍，10 次。', 'High-mark wall swings, 10 reps.') },
+    good: T('發球擊球時拍子向上伸展。', 'Racket reaches up at the serve contact.'),
+  },
+  racketDrop: {
+    low: { why: T('前揮時拍頭沒有先降到球的下方，揮拍太平，上旋不足、球不穩。', 'The head never drops below the ball in the forward swing, so the swing is flat and lacks topspin.'),
+      cue: T('「拍頭先掉下去，再往上刷」。', '"Drop the head, then brush up."'), drill: T('從膝蓋高度開始的由下往上揮拍，打到圍網上方，15 球。', 'Low-to-high swings starting at knee height, hitting up over the fence line. 15 balls.') },
+    high: { why: T('拍頭降得太低，揮拍路徑太陡，球容易短。', 'The head drops very low and the swing is too steep, so balls land short.'),
+      cue: T('「拍頭只降到比球低一點」。', '"Drop just below the ball."'), drill: T('擊球深度練習：目標打過發球線後兩公尺，15 球。', 'Depth drill: land balls 2 m beyond the service line. 15 balls.') },
+    good: T('拍頭有先下沉再往上揮。', 'Good low-to-high racket drop.'),
+  },
+  swingPath: {
+    low: { why: T('揮拍路徑太平或由上往下，球過網低、上旋少。', 'The swing path is flat or downward, so the ball clears the net low with little topspin.'),
+      cue: T('「由下往上刷球，像擦窗戶往上」。', '"Brush up the back of the ball."'), drill: T('對牆練習往上刷，讓球帶旋轉彈高，20 球。', 'Wall brushing practice making the ball kick up. 20 balls.') },
+    high: { why: T('揮拍太往上，力量變成旋轉、球速不足。', 'The path is very steep, turning power into spin and losing pace.'),
+      cue: T('「往前多一點，穿過球」。', '"More forward, through the ball."'), drill: T('目標打深，揮拍往目標延伸，15 球。', 'Aim deep and extend toward the target. 15 balls.') },
+    good: T('揮拍路徑由下往上，角度合適。', 'Good low-to-high swing path.'),
+  },
+  'swingPath@volley': {
+    high: { why: T('截擊往上撈，球容易飄高。', 'Lifting the volley makes it float.'), cue: T('「略由上往下擋」。', '"Block slightly high to low."'), drill: T('近網截擊下旋，20 球。', 'Underspin volleys at the net. 20 balls.') },
+    good: T('截擊路徑平穩略向下。', 'Steady, slightly downward volley path.'),
+  },
+  racketLag: {
+    low: { why: T('前揮時拍子和前臂幾乎一直線，少了「甩」的加速。', 'Racket and forearm stay in line in the forward swing, so there is no whip.'),
+      cue: T('「手腕放鬆，讓拍頭跟在手後面」。', '"Loose wrist - let the racket head trail the hand."'), drill: T('輕握拍空揮，感覺拍頭最後才甩出去，15 次。', 'Shadow swings with a light grip, feeling the head whip through last. 15 reps.') },
+    high: { why: T('拍頭落後太多，擊球時機不好抓。', 'The head lags too far behind, making timing hard.'), cue: T('「手腕稍微穩住」。', '"Firm the wrist a little."'), drill: T('慢速對打，專注準時擊球，20 球。', 'Slow rally focusing on on-time contact. 20 balls.') },
+    good: T('前揮有拍頭延遲，甩動自然。', 'Natural racket lag in the forward swing.'),
+  },
+  takeBack: {
+    low: { why: T('引拍時拍頭朝下太早，揮拍路徑和節奏不穩定。', 'The racket points down too early in the take-back, unsettling the path and rhythm.'),
+      cue: T('「引拍時拍頭朝上或朝後圍網」。', '"In the take-back, point the head up or at the back fence."'), drill: T('引拍定格：拍頭朝上停 1 秒再揮，10 次。', 'Take-back freeze: head up for a second, then swing. 10 reps.') },
+    good: T('引拍時拍頭位置合適。', 'Good racket position at the take-back.'),
+  },
+  racketFinish: {
+    low: { why: T('收拍時拍頭停在肩膀下方，揮拍可能中途減速。', 'The racket finishes below the shoulder, a sign of slowing down early.'),
+      cue: T('「拍子收到肩膀上方」。', '"Finish the racket over the shoulder."'), drill: T('收拍定格 2 秒，拍頭在肩上，15 次。', 'Hold the finish for 2 s with the head over the shoulder. 15 reps.') },
+    good: T('收拍時拍頭在肩膀上方。', 'Racket finishes over the shoulder.'),
+  },
+  serveDrop: {
+    low: { why: T('發球拍頭沒有在背後下垂，揮拍距離短、球速受限。', 'The racket head does not drop behind the back, shortening the serve swing.'),
+      cue: T('「讓拍頭在背後掉下去，像抓背」。', '"Let the head drop down your back, like scratching it."'), drill: T('丟球練習 10 次，感受手肘抬起、拍頭下垂。', 'Throwing practice, 10 reps, feeling elbow up and head down.') },
+    good: T('發球拍頭有充分下垂。', 'Good racket drop on the serve.'),
+  },
   unitTurn: {
     low: { why: T('肩膀轉得不夠，揮拍就只剩手臂在出力，球速和穩定度都會打折。', 'Without enough shoulder turn the arm does all the work, which costs both power and control.'),
       cue: T('「先轉肩、再引拍」：讓非持拍手那側的肩膀對準來球。', '"Turn first, then take it back": point your front shoulder at the ball.'),
@@ -276,6 +350,7 @@ export function fmtValue(m, lang, type) {
   const unit = m.unitOverride || m.unit;
   switch (unit) {
     case 'deg': return `${Math.round(v)}°`;
+    case 'face': return faceText(v, lang);
     case 'pctBH': return lang === 'zh' ? `${Math.round(v * 100)}% 身高` : `${Math.round(v * 100)}% of height`;
     case 'pct': return `${Math.round(v * 100)}%`;
     case 'ratio': return lang === 'zh' ? `${v.toFixed(1)} 倍肩寬` : `${v.toFixed(1)}× shoulder width`;
@@ -284,6 +359,11 @@ export function fmtValue(m, lang, type) {
     case 'speed': return lang === 'zh' ? `${v.toFixed(1)} 身高/秒` : `${v.toFixed(1)} heights/s`;
     default: return String(Math.round(v * 100) / 100);
   }
+}
+export function faceText(v, lang) {
+  const a = Math.round(Math.abs(v));
+  if (a <= 3) return lang === 'zh' ? '垂直' : 'square';
+  return lang === 'zh' ? (v < 0 ? `關閉 ${a}°` : `開放 ${a}°`) : (v < 0 ? `closed ${a}°` : `open ${a}°`);
 }
 function levelText(v, lang) {
   const zh = v < -0.15 ? '膝蓋高度' : v < 0.2 ? '髖部高度' : v < 0.55 ? '腰部高度' : v < 0.9 ? '胸口高度' : v < 1.15 ? '肩膀高度' : '高於肩膀';
@@ -296,13 +376,15 @@ export function fmtRange(key, type, lang, unitOverride) {
   const [lo, hi] = r;
   const f = (x) => {
     if (unit === 'deg') return `${Math.round(x)}°`;
-    if (['contactFront', 'legDrive', 'compact', 'trophyElbowHeight', 'tossArm', 'contactReach', 'headStable', 'recovery'].includes(key) || unitOverride === 'pctBH') return `${Math.round(x * 100)}%`;
+    if (['contactFront', 'legDrive', 'compact', 'trophyElbowHeight', 'tossArm', 'contactReach', 'headStable', 'recovery', 'racketHeadHeight', 'racketDrop', 'racketFinish', 'serveDrop'].includes(key) || unitOverride === 'pctBH') return `${Math.round(x * 100)}%`;
     if (key === 'baseWidth') return x.toFixed(1);
     if (key === 'chain') return `${Math.round(x)}/3`;
     if (key === 'contactHeight') return levelText(x, lang);
     return `${Math.round(x * 100)}%`;
   };
   if (key === 'chain') return lang === 'zh' ? '3/3' : '3/3';
+  if (key === 'racketFace') return `${faceText(lo, lang)} – ${faceText(hi, lang)}`;
+  if (['swingPath', 'racketLag', 'takeBack'].includes(key)) return `${Math.round(lo)}°–${Math.round(hi)}°`;
   if (key === 'headStable' || key === 'compact') return lang === 'zh' ? `≤ ${f(hi)}` : `≤ ${f(hi)}`;
   if (key === 'trunkLean') return `≤ ${f(hi)}`;
   if (hi >= 1.5 && key !== 'baseWidth' && unit !== 'deg') return `≥ ${f(lo)}`;
@@ -357,6 +439,32 @@ export function contactVerdicts(swings, heightCm, lang, single = false) {
       else { tail = zh ? '在腰到胸之間 ✓' : 'between waist and chest ✓'; ok = true; }
       out.push({ type, ok, lowConf: h.conf < CONF_OK, text: zh ? `${name}擊球高度${avgTxt}在${levelText(h.v, lang)}：${tail}` : `${name} contact height is ${avgTxt}at ${levelText(h.v, lang)}: ${tail}` });
     }
+  }
+  return out;
+}
+
+// Racket verdict lines (averages per stroke type, or one swing). Low-confidence values are
+// reported as "not reliable" rather than as advice.
+export const RACKET_KEYS = ['racketFace', 'racketHeadHeight', 'swingPath', 'racketDrop', 'racketLag', 'takeBack', 'racketFinish', 'serveDrop'];
+export function racketVerdicts(swings, lang, single = false) {
+  const zh = lang === 'zh'; const out = []; const groups = {};
+  for (const s of swings) (groups[s.type] = groups[s.type] || []).push(s);
+  for (const [type, list] of Object.entries(groups)) {
+    const prefix = single ? '' : `${STROKE_NAMES[type][zh ? 'zh' : 'en']} · `;
+    const weak = [];
+    for (const key of RACKET_KEYS) {
+      const ms = list.map((s) => s.metrics[key]).filter(Boolean); if (!ms.length) continue;
+      const good = ms.filter((m) => m.conf >= CONF_OK);
+      const name = METRIC_NAMES[key][zh ? 'zh' : 'en'];
+      if (!good.length) { weak.push(name); continue; }
+      const v = good.reduce((a, m) => a + m.v, 0) / good.length;
+      const m0 = { ...good[0], v };
+      const r = rangeFor(type, key); const unitOv = m0.unit === 'pctBH' ? 'pctBH' : undefined;
+      const dir = !r ? null : v < r[0] ? 'low' : v > r[1] ? 'high' : null;
+      const tx = metricText(key, type); const cue = dir && tx && tx[dir] ? tx[dir].cue[zh ? 'zh' : 'en'] : '';
+      out.push({ key, type, ok: !dir, lowConf: false, text: `${prefix}${name}：${fmtValue(m0, lang, type)}（${zh ? '理想' : 'ideal'} ${fmtRange(key, type, lang, unitOv)}）${dir ? (zh ? '　' : ' - ') + cue : ' ✓'}` });
+    }
+    if (weak.length) out.push({ key: '_weak', type, ok: false, lowConf: true, text: `${prefix}${zh ? '從這個角度／畫質無法可靠判斷：' : 'Not reliable from this angle or video quality: '}${weak.join(zh ? '、' : ', ')}` });
   }
   return out;
 }

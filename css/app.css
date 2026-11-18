@@ -281,3 +281,6 @@ tr.mt-detail td { background: var(--surface2); }
 .contact-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .hgt { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: .9rem; }
 .hgt input { width: 4.6em; font: inherit; padding: 6px 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface2); color: var(--text); min-height: 38px; }
+
+.racket-card { border-top: 4px solid #22d3ee; }
+.dg-fig.faded svg { opacity: .55; }

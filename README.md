@@ -73,6 +73,11 @@ filled-in frames and frame rate (for timing). Numbers below the confidence thres
 - Two-handed strokes move both wrists together, so a clip of only two-handers cannot tell a left-hander's
   backhand from a right-hander's forehand; the app flags this and you can switch the hand.
 - Serve and overhead look alike from pose alone; overheads are labelled serve unless you relabel them.
+- Racket analysis (optional, on by default, about 30-40% more processing time) uses a general object
+  detector (EfficientDet, COCO "tennis racket") plus simple geometry: the head is placed 3/4 of the way
+  from the hand to the far corner of the racket box, and the face angle comes from the shape of the head's
+  edges. It is only trustworthy with a side view, a sharp picture (60 fps or more, good light) and a
+  racket that is large in the frame; otherwise values are marked unreliable and never used for advice.
 - Busy backgrounds or several players can confuse tracking; tap the right player if needed.
 
 ## Tech
