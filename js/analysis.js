@@ -619,7 +619,7 @@ function analyzeSwing(ctx, c0, prevC, nextC, overrides) {
     const bw = len(horiz(sub(W(tr, c, LM.lAn), W(tr, c, LM.rAn)))) / Math.max(0.1, len(sub(W(tr, c, LM.lSh), W(tr, c, LM.rSh))));
     put('baseWidth', bw, visW(c - 1, c + 1, [27, 28, 11, 12]) * depthF(depthShare(sub(W(tr, c, LM.lAn), W(tr, c, LM.rAn)))) * rs(c, c), c);
     // contact
-    put('contactFront', fwd(c, S.wr), visW(c - 1, c + 1, [S.wr, 23, 24]) * depthF(Math.abs(F[2])) * rs(c - 1, c + 1), c);
+    put('contactFront', fwd(c, S.wr), visW(c - 1, c + 1, [S.wr, 23, 24]) * depthF(Math.abs(F[2])) * rs(c - 1, c + 1), c, { lat: lat(c, S.wr) });
     const shUp = upv(c, S.sh) || 0.3;
     put('contactHeight', upv(c, S.wr) / Math.max(0.1, shUp), visW(c - 1, c + 1, [S.wr, S.sh]) * 0.95 * rs(c, c), c);
   } else {

@@ -2,6 +2,8 @@
 import { t, L, getLang } from './i18n.js';
 import { STROKE_NAMES, VIEW_NAMES, AREA_NAMES, METRIC_NAMES, metricText, fmtValue, fmtRange, areaLabel } from './coach.js';
 import { AREAS } from './analysis.js';
+import { diagramSvg, LIGHT, DARK } from './diagrams.js';
+const svgUrl = (svg) => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
 
 function wrap(ctx, text, maxW) {
   const out = []; let line = '';
@@ -16,7 +18,7 @@ function wrap(ctx, text, maxW) {
 function loadImg(src) { return new Promise((res) => { if (!src) return res(null); const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; }); }
 
 export async function renderSummary(result, { fileName, keyframes, dark }) {
-  const W = 1080, H = 1350;
+  const W = 1080, H = 2600; // drawn tall, cropped to the used height at the end
   const c = document.createElement('canvas'); c.width = W; c.height = H;
   const ctx = c.getContext('2d');
   const col = dark
@@ -40,14 +42,15 @@ export async function renderSummary(result, { fileName, keyframes, dark }) {
   ctx.fillText(`${L(VIEW_NAMES[result.view.key])} · ${t('handIs', { h: result.hand === 'L' ? t('handL') : t('handR') })}${fileName ? ' · ' + fileName.slice(0, 32) : ''}`, 56, y + 40);
   y += 80;
   // key frames
-  const imgs = (await Promise.all((keyframes || []).slice(0, 3).map(loadImg))).filter(Boolean);
+  const kfs = (keyframes || []).slice(0, 3);
+  const imgs = (await Promise.all(kfs.map(async (k) => ({ im: await loadImg(k.src), ov: k.svg ? await loadImg(svgUrl(k.svg)) : null })))).filter((x) => x.im);
   if (imgs.length) {
     const gap = 16, kw = (W - 112 - gap * (imgs.length - 1)) / imgs.length;
     let kh = 0;
-    imgs.forEach((im, i) => {
+    imgs.forEach(({ im, ov }, i) => {
       const h = Math.min(330, kw * im.height / im.width); kh = Math.max(kh, h);
       const x = 56 + i * (kw + gap);
-      ctx.save(); roundRect(ctx, x, y, kw, h, 18); ctx.clip(); ctx.drawImage(im, x, y, kw, h); ctx.restore();
+      ctx.save(); roundRect(ctx, x, y, kw, h, 18); ctx.clip(); ctx.drawImage(im, x, y, kw, h); if (ov) ctx.drawImage(ov, x, y, kw, h); ctx.restore();
     });
     y += kh + 30;
   }
@@ -64,41 +67,54 @@ export async function renderSummary(result, { fileName, keyframes, dark }) {
     } else { ctx.fillStyle = col.muted; ctx.font = font(500, 22); ctx.fillText('–', 870, y + 27); }
     y += 42;
   }
-  y += 16;
+  y += 34;
   // top issues
   ctx.fillStyle = col.text; ctx.font = font(800, 32); ctx.fillText(t('topIssues'), 56, y + 10); y += 30;
   const issues = result.overall.issues.slice(0, 3);
   if (!issues.length) { ctx.font = font(500, 26); ctx.fillStyle = col.muted; ctx.fillText(t('noIssues'), 56, y + 30); y += 50; }
+  const pal = dark ? DARK : LIGHT;
+  const dgs = await Promise.all(issues.map((is) => {
+    const sw = result.swings[is.swings[0] - 1]; const m = { ...((sw && sw.metrics[is.key]) || { key: is.key }), v: is.v };
+    const svg = diagramSvg(m, is.type, { hand: result.hand, lang: getLang(), palette: pal });
+    return svg ? loadImg(svgUrl(svg)) : null;
+  }));
   issues.forEach((is, i) => {
-    if (y > H - 170) return;
     const txt = metricText(is.key, is.type); const d = txt && txt[is.dir];
-    ctx.fillStyle = i === 0 ? col.bad : col.mid; ctx.beginPath(); ctx.arc(76, y + 30, 20, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#fff'; ctx.font = font(800, 24); ctx.textAlign = 'center'; ctx.fillText(String(i + 1), 76, y + 39); ctx.textAlign = 'left';
-    ctx.fillStyle = col.text; ctx.font = font(800, 28);
-    ctx.fillText(`${L(METRIC_NAMES[is.key])} · ${L(STROKE_NAMES[is.type])}`, 110, y + 40);
-    ctx.fillStyle = col.muted; ctx.font = font(500, 22);
-    ctx.fillText(`${fmtValue({ v: is.v, unit: is.unit || metricUnit(is.key) }, getLang(), is.type)}  (${t('ideal', { r: fmtRange(is.key, is.type, getLang(), is.unit === 'pctBH' ? 'pctBH' : undefined) })})`, 110, y + 74);
-    y += 82;
+    const top = y + 10, dw = 390, dh = 260;
+    ctx.fillStyle = col.card; roundRect(ctx, 56, top, W - 112, dh + 20, 22); ctx.fill();
+    const tx0 = dgs[i] ? 56 + dw + 34 : 110, tw = W - 56 - tx0 - 24;
+    if (dgs[i]) ctx.drawImage(dgs[i], 66, top + 10, dw, dh);
+    ctx.fillStyle = i === 0 ? col.bad : col.mid; ctx.beginPath(); ctx.arc(tx0 + 18, top + 42, 18, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = font(800, 22); ctx.textAlign = 'center'; ctx.fillText(String(i + 1), tx0 + 18, top + 50); ctx.textAlign = 'left';
+    let ty = top + 50;
+    ctx.fillStyle = col.text; ctx.font = font(800, 27);
+    for (const ln of wrap(ctx, L(METRIC_NAMES[is.key]), tw - 48).slice(0, 2)) { ctx.fillText(ln, tx0 + 48, ty); ty += 34; }
+    ctx.fillStyle = col.muted; ctx.font = font(600, 21); ctx.fillText(L(STROKE_NAMES[is.type]), tx0 + 48, ty); ty += 34;
+    ctx.font = font(500, 21);
+    for (const ln of wrap(ctx, `${fmtValue({ v: is.v, unit: is.unit || metricUnit(is.key) }, getLang(), is.type)} · ${t('ideal', { r: fmtRange(is.key, is.type, getLang(), is.unit === 'pctBH' ? 'pctBH' : undefined) })}`, tw).slice(0, 2)) { ctx.fillText(ln, tx0, ty); ty += 30; }
     if (d) {
-      ctx.fillStyle = col.primary; ctx.font = font(700, 25);
-      for (const ln of wrap(ctx, L(d.cue), W - 166).slice(0, 2)) { ctx.fillText(ln, 110, y + 26); y += 34; }
+      ty += 6; ctx.fillStyle = col.primary; ctx.font = font(700, 23);
+      for (const ln of wrap(ctx, L(d.cue), tw).slice(0, 3)) { ctx.fillText(ln, tx0, ty); ty += 32; }
     }
-    y += 22;
+    y = Math.max(top + dh + 20, ty) + 16;
   });
   // strengths
-  if (result.overall.strengths.length && y < H - 140) {
+  y += 10;
+  if (result.overall.strengths.length) {
     ctx.fillStyle = col.text; ctx.font = font(800, 30); ctx.fillText(t('wellDone'), 56, y + 14); y += 26;
     for (const s of result.overall.strengths.slice(0, 2)) {
-      if (y > H - 100) break;
       const txt = metricText(s.key, s.type);
       ctx.fillStyle = col.good; ctx.font = font(800, 26); ctx.fillText('✓', 60, y + 34);
       ctx.fillStyle = col.text; ctx.font = font(500, 25); ctx.fillText((txt ? L(txt.good) : L(METRIC_NAMES[s.key])).slice(0, 60), 100, y + 34); y += 42;
     }
   }
+  y += 30;
   ctx.fillStyle = col.muted; ctx.font = font(500, 20);
-  ctx.fillText(t('privacy'), 56, H - 52);
-  ctx.fillText('ywchen0711.github.io/tennis-coach', 56, H - 24);
-  return new Promise((res) => c.toBlob((b) => res(b), 'image/png'));
+  ctx.fillText(t('privacy'), 56, y + 20);
+  ctx.fillText('ywchen0711.github.io/tennis-coach', 56, y + 48);
+  const out = document.createElement('canvas'); out.width = W; out.height = Math.min(H, Math.max(1350, y + 76));
+  const o2 = out.getContext('2d'); o2.fillStyle = col.bg; o2.fillRect(0, 0, W, out.height); o2.drawImage(c, 0, 0);
+  return new Promise((res) => out.toBlob((b) => res(b), 'image/png'));
 }
 function metricUnit(key) { return ({ unitTurn: 'deg', separation: 'deg', trophyElbow: 'deg', kneeBend: 'deg', elbowAngle: 'deg', trunkLean: 'deg', contactHeight: 'level', chain: 'order', baseWidth: 'ratio', offArm: 'pct', finish: 'pct', extension: 'pct', wristSpeed: 'speed' })[key] || 'pctBH'; }
 export { metricUnit };

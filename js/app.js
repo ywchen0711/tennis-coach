@@ -7,6 +7,7 @@ import { STROKE_NAMES, STROKE_SHORT, VIEW_NAMES, VIEW_NOTES, AREA_NAMES, PHASE_N
 import { lineChart, drawSkeleton, drawTrail, cssVar, fitCanvas } from './charts.js';
 import { saveAnalysis, listAnalyses, deleteAnalysis, clearAnalyses } from './store.js';
 import { renderSummary } from './summary.js';
+import { diagramSvg, overlaySvg, skeletonSvg } from './diagrams.js';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -88,6 +89,7 @@ async function primeVideo(v, url) {
 async function loadFile(file) {
   if (state.abort) return;
   if (state.url) URL.revokeObjectURL(state.url);
+  frameCache.clear();
   Object.assign(state, { file, url: URL.createObjectURL(file), frames: null, track: null, result: null, anchor: null, overrides: {}, kf: {}, sel: 0, fromHistory: false, recId: null, scan: null });
   const pv = $('#prepVideo');
   show('prepare');
@@ -222,7 +224,7 @@ async function runAnalysis() {
     store.set('sc-ms-' + state.quality, String(Math.round(res.msPerFrame + 5)));
     state.frames = res.frames; state.aspect = res.aspect; state.sampleFps = res.sampleFps;
     state.multi = res.frames.filter((f) => f.poses.length > 1).length / Math.max(1, res.frames.length);
-    state.anchor = null; state.overrides = {}; state.kf = {}; state.sel = 0; state.fromHistory = false;
+    state.anchor = null; state.overrides = {}; state.sel = 0; state.fromHistory = false;
     state.recId = 'a' + Date.now();
     compute();
     if (state.result.error === 'noPose') { toast(t('noPose'), 6000); show('prepare'); return; }
@@ -291,7 +293,7 @@ function renderBadges() {
 }
 function recompute() {
   if (state.fromHistory || !state.frames) return;
-  compute(); state.kf = {}; renderResults(); saveHistory(); captureKeyframes();
+  compute(); renderResults(); saveHistory(); captureKeyframes();
 }
 function renderChips() {
   const r = state.result;
@@ -328,7 +330,22 @@ function areasHtml(areas) {
     return `<div class="area"><span>${esc(L(AREA_NAMES[a]))}</span><div class="bar-bg"><div class="bar-fg" style="width:${Math.max(6, v.score * 100).toFixed(0)}%;background:${scoreColor(v.score)}"></div></div><span class="lbl" style="color:${scoreColor(v.score)}">${esc(areaLabel(v.score, lang()))}</span></div>`;
   }).join('')}</div><p class="note" style="margin-top:8px">${esc(t('areasNote'))}</p></div>`;
 }
-function issueCard(i, m, type, extra = '') {
+// diagram + the player's own frame with the ideal zone drawn on it
+function visualHtml(m, type, sw, good = false) {
+  const hand = state.result.hand;
+  const dg = diagramSvg(m, type, { hand, lang: lang(), good });
+  let ph = '';
+  if (!state.fromHistory && state.track && Number.isFinite(m.time)) {
+    const pose = poseAt(state.track, m.time);
+    if (pose) {
+      const ov = overlaySvg(m, type, { pose, aspect: state.aspect, F: sw && sw.F, BHimg: state.result.BHimg, hand, lang: lang(), good });
+      ph = `<figure class="ph-fig" data-zoom style="aspect-ratio:${state.aspect};--ar:${state.aspect}"><img data-ft="${m.time}" alt="">${ov}<figcaption>${esc(fmtTime(m.time))}</figcaption></figure>`;
+    }
+  }
+  if (!dg && !ph) return '';
+  return `<div class="dg-row">${dg ? `<figure class="dg-fig" data-zoom>${dg}</figure>` : ''}${ph}</div>`;
+}
+function issueCard(i, m, type, extra = '', mFull = null, sw = null) {
   const txt = metricText(m.key, type); const d = txt && txt[m.dir];
   const unitOv = m.unitOverride || (m.unit === 'pctBH' ? 'pctBH' : undefined);
   const val = fmtValue(m, lang(), type);
@@ -337,11 +354,13 @@ function issueCard(i, m, type, extra = '') {
     <dl>
       <dt>${esc(t('saw'))}</dt><dd class="saw"><span><b>${esc(val)}</b> · ${esc(t('ideal', { r: fmtRange(m.key, type, lang(), unitOv) }))}${extra}</span>
         ${state.fromHistory ? '' : `<button class="chip" type="button" data-seek="${m.time}">▶ ${esc(t('seeFrame'))} ${esc(fmtTime(m.time))}</button>`}</dd>
+      <dd>${visualHtml(mFull || m, type, sw)}</dd>
       ${d ? `<dt>${esc(t('why'))}</dt><dd>${esc(L(d.why))}</dd>
       <dt>${esc(t('cue'))}</dt><dd class="cue">${esc(L(d.cue))}</dd>
       <dt>${esc(t('drill'))}</dt><dd>${esc(L(d.drill))}</dd>` : ''}
     </dl></div>`;
 }
+function goodDg(m, type) { const d = diagramSvg(m, type, { hand: state.result.hand, lang: lang(), good: true }); return d ? `<figure class="dg-mini" data-zoom>${d}</figure>` : ''; }
 function bindSeeks(root) {
   root.querySelectorAll('[data-seek]').forEach((b) => b.addEventListener('click', () => {
     seekVideo(+b.dataset.seek); $('#resVideo').pause();
@@ -360,9 +379,10 @@ function renderCoach() {
     if (!r.overall.issues.length) h.push(`<div class="card"><p>${esc(t('noIssues'))}</p></div>`);
     r.overall.issues.forEach((is, i) => {
       const m = { key: is.key, v: is.v, dir: is.dir, unit: is.unit, time: is.frames[0] };
-      h.push(issueCard(i, m, is.type, ` · ${esc(L(STROKE_NAMES[is.type]))} · ${esc(t('inSwings', { s: is.swings.join(', ') }))}`));
+      const sw = r.swings[is.swings[0] - 1]; const mf = sw && sw.metrics[is.key] ? { ...sw.metrics[is.key], v: is.v } : m;
+      h.push(issueCard(i, m, is.type, ` · ${esc(L(STROKE_NAMES[is.type]))} · ${esc(t('inSwings', { s: is.swings.join(', ') }))}`, mf, sw));
     });
-    if (r.overall.strengths.length) h.push(`<div class="card"><h3>${esc(t('wellDone'))}</h3><ul class="good-list">${r.overall.strengths.map((g) => { const tx = metricText(g.key, g.type); return `<li><span><b>${esc(L(METRIC_NAMES[g.key]))}</b> · ${esc(L(STROKE_NAMES[g.type]))}<br>${esc(tx ? L(tx.good) : '')}</span></li>`; }).join('')}</ul></div>`);
+    if (r.overall.strengths.length) h.push(`<div class="card"><h3>${esc(t('wellDone'))}</h3><ul class="good-list">${r.overall.strengths.map((g) => { const tx = metricText(g.key, g.type); const sw = r.swings.find((x) => x.type === g.type && x.metrics[g.key]); return `<li>${goodDg(sw ? sw.metrics[g.key] : { key: g.key, v: g.v }, g.type)}<span><b>${esc(L(METRIC_NAMES[g.key]))}</b> · ${esc(L(STROKE_NAMES[g.type]))}<br>${esc(tx ? L(tx.good) : '')}</span></li>`; }).join('')}</ul></div>`);
     h.push(consistencyHtml());
   } else {
     h.push(`<div class="card"><div class="type-pick"><b>${esc(t('strokeType'))}</b><select id="typeSel" ${state.fromHistory ? 'disabled' : ''}>${STROKES.map((k) => `<option value="${k}" ${k === s.type ? 'selected' : ''}>${esc(L(STROKE_NAMES[k]))}</option>`).join('')}</select><span class="note">${esc(t('strokeFix'))}</span></div></div>`);
@@ -371,9 +391,9 @@ function renderCoach() {
     const issues = rankIssues(s, 3);
     h.push(`<h3 style="margin:6px 2px 0">${esc(t('topIssues'))}</h3>`);
     if (!issues.length) h.push(`<div class="card"><p>${esc(t('noIssues'))}</p></div>`);
-    issues.forEach((m, i) => h.push(issueCard(i, m, s.type)));
+    issues.forEach((m, i) => h.push(issueCard(i, m, s.type, '', m, s)));
     const good = rankStrengths(s, 3);
-    if (good.length) h.push(`<div class="card"><h3>${esc(t('wellDone'))}</h3><ul class="good-list">${good.map((g) => { const tx = metricText(g.key, s.type); return `<li><span><b>${esc(L(METRIC_NAMES[g.key]))}</b> ${esc(fmtValue(g, lang(), s.type))}<br>${esc(tx ? L(tx.good) : '')}</span></li>`; }).join('')}</ul></div>`);
+    if (good.length) h.push(`<div class="card"><h3>${esc(t('wellDone'))}</h3><ul class="good-list">${good.map((g) => { const tx = metricText(g.key, s.type); return `<li>${goodDg(g, s.type)}<span><b>${esc(L(METRIC_NAMES[g.key]))}</b> ${esc(fmtValue(g, lang(), s.type))}<br>${esc(tx ? L(tx.good) : '')}</span></li>`; }).join('')}</ul></div>`);
     const weak = Object.values(s.metrics).filter((m) => m.conf < CONF_MIN && m.impact > 0);
     if (weak.length) h.push(`<div class="card"><p class="note"><span class="warn-ico">⚠</span> ${esc(t('angleWarn'))} ${weak.map((m) => esc(L(METRIC_NAMES[m.key]))).join('、')}. ${esc(t('lowConfNote'))}</p></div>`);
   }
@@ -383,14 +403,15 @@ function renderCoach() {
   el.querySelectorAll('#slowFix button').forEach((b) => b.addEventListener('click', () => { state.slow = b.dataset.v; recompute(); toast(t('slowIs', { n: b.dataset.v })); }));
   const ts = $('#typeSel'); if (ts) ts.addEventListener('change', () => { const sw = selSwing(); state.overrides[sw.key] = ts.value; recompute(); });
   el.querySelectorAll('.kf figure').forEach((f) => f.addEventListener('click', () => { seekVideo(+f.dataset.t); $('#resVideo').pause(); }));
+  hydrate(el);
 }
 function keyframesHtml(s) {
-  const kf = state.kf[s.key] || {};
   const isServe = s.type === 'serve' || s.type === 'overhead';
-  const items = [[isServe ? 'kfTrophy' : 'kfBack', isServe ? s.idx.trophy : s.idx.b, kf.back], ['kfContact', s.idx.c, kf.contact], ['kfFinish', s.idx.fin, kf.finish]];
-  return `<div class="card"><h3>${esc(t('keyframes'))}</h3><div class="kf">${items.map(([lbl, i, src]) => {
+  const items = [[isServe ? 'kfTrophy' : 'kfBack', isServe ? s.idx.trophy : s.idx.b], ['kfContact', s.idx.c], ['kfFinish', s.idx.fin]];
+  return `<div class="card"><h3>${esc(t('keyframes'))}</h3><div class="kf">${items.map(([lbl, i]) => {
     const tt = state.track.t[Math.max(0, i)];
-    return `<figure data-t="${tt}">${src ? `<img src="${src}" alt="">` : `<div style="aspect-ratio:${state.aspect};background:var(--surface2);border-radius:10px"></div>`}<figcaption>${esc(t(lbl))} · ${esc(fmtTime(tt))}</figcaption></figure>`;
+    const pose = poseAt(state.track, tt);
+    return `<figure data-t="${tt}"><div class="kf-pic" style="aspect-ratio:${state.aspect}"><img data-ft="${tt}" alt="">${pose ? skeletonSvg(pose, state.aspect) : ''}</div><figcaption>${esc(t(lbl))} · ${esc(fmtTime(tt))}</figcaption></figure>`;
   }).join('')}</div></div>`;
 }
 function consistencyHtml() {
@@ -417,11 +438,19 @@ function renderMetrics() {
       const m = s.metrics[k];
       const dot = Number.isFinite(m.score) && m.impact > 0 ? `<span class="score-dot" style="background:${scoreColor(m.score)}"></span>` : '';
       const unitOv = m.unitOverride || (m.unit === 'pctBH' ? 'pctBH' : undefined);
-      return `<tr><td>${dot}${esc(L(METRIC_NAMES[k]))}${m.conf < CONF_MIN ? ` <span class="warn-ico" title="${esc(t('unreliable'))}">⚠</span>` : ''}</td><td class="v">${cellVal(m, s.type)}</td><td>${m.range ? esc(fmtRange(k, s.type, lang(), unitOv)) : '–'}</td><td>${confBadge(m.conf)}${m.conf < CONF_MIN ? `<br><span class="small muted">${esc(t('unreliable'))}</span>` : ''}</td></tr>`;
+      return `<tr class="mrow" data-mk="${k}"><td>${dot}${esc(L(METRIC_NAMES[k]))} <span class="muted small">▾</span>${m.conf < CONF_MIN ? ` <span class="warn-ico" title="${esc(t('unreliable'))}">⚠</span>` : ''}</td><td class="v">${cellVal(m, s.type)}</td><td>${m.range ? esc(fmtRange(k, s.type, lang(), unitOv)) : '–'}</td><td>${confBadge(m.conf)}${m.conf < CONF_MIN ? `<br><span class="small muted">${esc(t('unreliable'))}</span>` : ''}</td></tr>`;
     }).join('');
     el.innerHTML = `<div class="card" style="overflow-x:auto"><h3>${esc(t('swingN', { n: s.index }))} · ${esc(L(STROKE_NAMES[s.type]))} · ${esc(fmtTime(s.phases.contact))}</h3>
       <table class="mt"><thead><tr><th>${esc(t('metric'))}</th><th>${esc(t('value'))}</th><th>${esc(t('range'))}</th><th>${esc(t('confidence'))}</th></tr></thead><tbody>${rows}</tbody></table>
       <p class="note" style="margin-top:8px">${esc(t('lowConfNote'))} ${esc(t('heuristicNote'))}</p></div>`;
+    el.querySelectorAll('tr.mrow').forEach((tr) => tr.addEventListener('click', () => {
+      const nx = tr.nextElementSibling;
+      if (nx && nx.classList.contains('mt-detail')) { nx.remove(); return; }
+      const m = s.metrics[tr.dataset.mk]; const v = visualHtml(m, s.type, s, !(m.score < 0.75));
+      if (!v) return;
+      tr.insertAdjacentHTML('afterend', `<tr class="mt-detail"><td colspan="4">${v}</td></tr>`);
+      hydrate(tr.nextElementSibling);
+    }));
   } else {
     const keys = METRIC_ORDER.filter((k) => r.swings.some((sw) => sw.metrics[k]));
     const head = r.swings.map((sw) => `<th>#${sw.index}<br>${esc(L(STROKE_SHORT[sw.type]))}</th>`).join('');
@@ -677,33 +706,45 @@ ov.addEventListener('click', (ev) => {
   recompute(); toast(t('playerChanged'));
 });
 
-// key frames (small JPEGs with the skeleton) captured from the decoding video
+// Frames grabbed from the decoding video (raw JPEGs; skeletons and zones are drawn as SVG on
+// top). One queue, because the work video can only seek to one place at a time.
+const frameCache = new Map();
+let grabQueue = Promise.resolve();
+function grab(tt) {
+  const k = tt.toFixed(3);
+  if (frameCache.has(k)) return frameCache.get(k);
+  const p = grabQueue.then(() => captureFrame(work, tt, 480)).catch(() => '');
+  grabQueue = p.then(() => {}, () => {});
+  frameCache.set(k, p);
+  if (frameCache.size > 80) frameCache.delete(frameCache.keys().next().value);
+  return p;
+}
+function hydrate(root) {
+  root.querySelectorAll('img[data-ft]').forEach((img) => {
+    if (img.getAttribute('src') || state.fromHistory) return;
+    grab(+img.dataset.ft).then((url) => { if (url) img.src = url; });
+  });
+  root.querySelectorAll('[data-zoom]').forEach((f) => { f.onclick = (e) => { e.stopPropagation(); openZoom(f); }; });
+}
+const zoomEl = document.createElement('div'); zoomEl.className = 'zoom'; zoomEl.hidden = true; document.body.appendChild(zoomEl);
+zoomEl.addEventListener('click', () => { zoomEl.hidden = true; zoomEl.innerHTML = ''; });
+function openZoom(f) {
+  const c = f.cloneNode(true); c.removeAttribute('data-zoom'); c.onclick = null;
+  zoomEl.innerHTML = ''; zoomEl.appendChild(c); zoomEl.hidden = false;
+}
 async function captureKeyframes() {
   const r = state.result; if (!r || state.fromHistory) return;
-  const token = state.recId + ':' + r.hand + ':' + r.swings.map((s) => s.key + s.type).join(',');
-  state.kfToken = token;
-  const list = r.swings.slice(0, 12);
-  for (const s of list) {
-    if (state.kfToken !== token) return;
-    const isServe = s.type === 'serve' || s.type === 'overhead';
-    const want = { back: isServe ? s.idx.trophy : s.idx.b, contact: s.idx.c, finish: s.idx.fin };
-    const out = {};
-    for (const [k, i] of Object.entries(want)) {
-      const tt = state.track.t[Math.max(0, i)];
-      try {
-        out[k] = await captureFrame(work, tt, 240, (ctx, w, h) => drawSkeleton(ctx, poseAt(state.track, tt), { x: 0, y: 0, w, h }, r.hand, { lineWidth: 2.5 }));
-      } catch (e) { /* ignore */ }
-    }
-    if (state.kfToken !== token) return;
-    state.kf[s.key] = out;
-    if (state.tab === 'coach' && selSwing() === s) renderCoach();
-  }
+  frameCache.clear();
+  for (const s of r.swings.slice(0, 3)) grab(state.track.t[s.idx.c]);
 }
 
 // ---------- summary image ----------
 $('#btnSave').addEventListener('click', async () => {
   const r = state.result; if (!r) return;
-  const kfs = r.swings.slice(0, 3).map((s) => state.kf[s.key] && state.kf[s.key].contact).filter(Boolean);
+  const kfs = state.fromHistory ? [] : (await Promise.all(r.swings.slice(0, 3).map(async (s) => {
+    const tt = state.track.t[s.idx.c]; const src = await grab(tt); const pose = poseAt(state.track, tt);
+    return src ? { src, svg: pose ? skeletonSvg(pose, state.aspect) : '' } : null;
+  }))).filter(Boolean);
   const blob = await renderSummary(r, { fileName: state.file ? state.file.name : '', keyframes: kfs, dark: effectiveDark() });
   if (!blob) return;
   const name = `swing-coach-${new Date().toISOString().slice(0, 10)}.png`;
